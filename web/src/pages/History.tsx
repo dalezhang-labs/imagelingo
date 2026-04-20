@@ -61,7 +61,7 @@ export default function History() {
                     <td className="px-4 py-3"><img src={job.original_image_url} alt="original" className="w-12 h-12 object-cover rounded border border-gray-100" /></td>
                     <td className="px-4 py-3 text-gray-700">{job.target_languages.join(", ")}</td>
                     <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(job.status)}`}>{job.status}</span></td>
-                    <td className="px-4 py-3 text-gray-400">{new Date(job.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-gray-400">{new Date(job.created_at).toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="px-4 py-3"><button onClick={() => setSelected(job)} className="text-indigo-600 hover:underline text-xs font-medium">View</button></td>
                   </tr>
                 ))}

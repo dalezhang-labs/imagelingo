@@ -1,13 +1,25 @@
-import asyncio
 import uuid
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from backend.db.connection import get_connection
 from backend.services.token_store import get_token
+
+LANG_NAMES = {
+    "EN": "English", "EN-US": "English", "EN-GB": "English",
+    "DE": "German",
+    "JA": "Japanese",
+    "KO": "Korean",
+    "FR": "French",
+    "ES": "Spanish",
+    "IT": "Italian",
+    "PT": "Portuguese",
+    "TH": "Thai",
+    "VI": "Vietnamese",
+    "ID": "Indonesian",
+}
 
 router = APIRouter()
 
@@ -133,54 +145,22 @@ def _check_quota(store_id: str) -> bool:
 # ── Background pipeline ────────────────────────────────────────────────────
 
 async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_languages: list[str]):
-    from backend.services.ocr_service import OCRService
-    from backend.services.translate_service import TranslateService
     from backend.services.lovart_service import LovartService
     from backend.services.cloudinary_service import CloudinaryService
 
     _update_job_status(job_id, "processing")
 
     try:
-        # Download original image
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(image_url)
-            resp.raise_for_status()
-            image_bytes = resp.content
-
-        # OCR
-        ocr = OCRService()
-        ocr_results = await ocr.extract_text(image_bytes)
-
-        if not ocr_results:
-            _update_job_status(job_id, "failed", "No text detected in image")
-            return
-
-        source_texts = [r["text"] for r in ocr_results]
-
-        translate_svc = TranslateService()
         lovart_svc = LovartService()
         cloudinary_svc = CloudinaryService()
 
         for lang in target_languages:
-            # Translate
-            translated_texts = await translate_svc.translate_texts(source_texts, lang)
+            lang_name = LANG_NAMES.get(lang.upper(), lang)
+            translated_url = await lovart_svc.translate_image(image_url, lang_name)
 
-            # Build text regions for Lovart
-            text_regions = [
-                {
-                    "bbox": ocr_results[i]["bbox"],
-                    "text": translated_texts[i],
-                    "original_text": ocr_results[i]["text"],
-                }
-                for i in range(len(ocr_results))
-            ]
-
-            # Render
-            rendered_bytes = await lovart_svc.render_text_on_image(image_bytes, text_regions)
-
-            # Upload
+            # Upload to Cloudinary for persistent storage
             public_id = f"{job_id}_{lang.replace('-', '_').lower()}"
-            output_url = await cloudinary_svc.upload_image(rendered_bytes, public_id)
+            output_url = await cloudinary_svc.upload_image_from_url(translated_url, public_id)
 
             _save_translated_image(job_id, lang, output_url)
 

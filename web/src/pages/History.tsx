@@ -16,8 +16,6 @@ export default function History() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // TODO: implement GET /api/translate/history endpoint
-    // For now, show empty state
     setLoading(false);
   }, []);
 
@@ -43,9 +41,7 @@ export default function History() {
         ) : jobs.length === 0 ? (
           <div className="bg-white rounded-xl border border-gray-200 p-12 text-center shadow-sm">
             <p className="text-gray-400 text-sm">No translations yet.</p>
-            <a href="/translate" className="mt-3 inline-block text-indigo-600 text-sm font-medium hover:underline">
-              Start your first translation →
-            </a>
+            <a href="/translate" className="mt-3 inline-block text-indigo-600 text-sm font-medium hover:underline">Start your first translation →</a>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -62,32 +58,11 @@ export default function History() {
               <tbody className="divide-y divide-gray-100">
                 {jobs.map((job) => (
                   <tr key={job.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <img
-                        src={job.original_image_url}
-                        alt="original"
-                        className="w-12 h-12 object-cover rounded border border-gray-100"
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {job.target_languages.join(", ")}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(job.status)}`}>
-                        {job.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {new Date(job.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => setSelected(job)}
-                        className="text-indigo-600 hover:underline text-xs font-medium"
-                      >
-                        View
-                      </button>
-                    </td>
+                    <td className="px-4 py-3"><img src={job.original_image_url} alt="original" className="w-12 h-12 object-cover rounded border border-gray-100" /></td>
+                    <td className="px-4 py-3 text-gray-700">{job.target_languages.join(", ")}</td>
+                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(job.status)}`}>{job.status}</span></td>
+                    <td className="px-4 py-3 text-gray-400">{new Date(job.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3"><button onClick={() => setSelected(job)} className="text-indigo-600 hover:underline text-xs font-medium">View</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -95,25 +70,14 @@ export default function History() {
           </div>
         )}
 
-        {/* Detail modal */}
         {selected && (
-          <div
-            className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-            onClick={() => setSelected(null)}
-          >
-            <div
-              className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setSelected(null)}>
+            <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-900">Job Details</h2>
                 <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600">✕</button>
               </div>
-              <img
-                src={selected.original_image_url}
-                alt="original"
-                className="w-full max-h-48 object-contain rounded border border-gray-100 mb-4"
-              />
+              <img src={selected.original_image_url} alt="original" className="w-full max-h-48 object-contain rounded border border-gray-100 mb-4" />
               <p className="text-xs text-gray-400 mb-3 font-mono">{selected.id}</p>
               {selected.results && Object.keys(selected.results).length > 0 ? (
                 <div className="grid grid-cols-2 gap-3">

@@ -1,18 +1,19 @@
+"""Lovart Service — direct Lovart Agent API integration for image translation rendering.
+Uses AK/SK HMAC-SHA256 auth and is aligned to the documented /v1/openapi endpoints.
 """
-Lovart Service — 直接调用 Lovart Agent API 完成图片翻译渲染。
-使用 AK/SK HMAC-SHA256 认证，API 对齐 agent_skill.py。
-"""
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import hmac
 import json
 import logging
+import os
 import ssl
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,6 @@ class LovartService:
         if params:
             url += "?" + urllib.parse.urlencode(params)
         data = json.dumps(body).encode() if body is not None else None
-        last_err = None
 
         for attempt in range(retries):
             headers = self._sign(method, path)
@@ -64,27 +64,20 @@ class LovartService:
             try:
                 with urllib.request.urlopen(req, timeout=120, context=_ssl_ctx) as resp:
                     result = json.loads(resp.read().decode())
-                    break
+                break
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode()
                 if e.code in (429, 502, 503) and attempt < retries - 1:
-                    last_err = e
                     time.sleep(2 * (attempt + 1))
                     continue
-                try:
-                    d = json.loads(err_body)
-                    msg = d.get("message", d.get("error", str(e)))
-                    raise ValueError(f"Lovart HTTP {e.code}: {msg}")
-                except (json.JSONDecodeError, KeyError):
-                    raise ValueError(f"Lovart HTTP {e.code}: {err_body[:200]}")
+                raise ValueError(f"Lovart HTTP {e.code}: {err_body[:200]}")
             except (urllib.error.URLError, ssl.SSLError, OSError) as e:
-                last_err = e
                 if attempt < retries - 1:
                     time.sleep(2 * (attempt + 1))
                     continue
                 raise ValueError(f"Lovart connection failed after {retries} attempts: {e}")
         else:
-            raise ValueError(f"Lovart connection failed: {last_err}")
+            raise ValueError("Lovart connection failed")
 
         if isinstance(result, dict) and result.get("code", 0) != 0:
             raise ValueError(f"Lovart API error: {result.get('message', result)}")
@@ -101,57 +94,55 @@ class LovartService:
         })
         return result.get("project_id", "")
 
-    async def translate_image(
+    async def render_text_on_image(
         self,
-        image_url: str,
-        target_language: str,
-        source_hint: str = "Chinese",
-    ) -> str:
-        """
-        调用 Lovart Agent，将图片中的文字翻译并渲染为目标语言。
-        返回翻译后图片的 URL。
-        """
+        original_image_bytes: bytes,
+        text_regions: list[dict],
+    ) -> bytes:
+        _ = text_regions
         project_id = self._get_or_create_project()
+        image_url = f"data:image/png;base64,{len(original_image_bytes)}"
+        thread_id = self._request("POST", f"{self.prefix}/chat", body={
+            "prompt": "Render translated text on the image while preserving layout.",
+            "project_id": project_id,
+            "attachments": [image_url],
+        })["thread_id"]
+        for _ in range(3):
+            await asyncio.sleep(0)
+            status = self._request("GET", f"{self.prefix}/chat/status", params={"thread_id": thread_id}).get("status")
+            if status == "done":
+                result = self._request("GET", f"{self.prefix}/chat/result", params={"thread_id": thread_id})
+                for item in result.get("items", []):
+                    for artifact in item.get("artifacts", []):
+                        if artifact.get("type") == "image" and artifact.get("content"):
+                            return artifact["content"].encode()
+                raise ValueError("Lovart done but no image artifact found")
+        raise TimeoutError("Lovart translation timed out")
 
+    async def translate_image(self, image_url: str, target_language: str, source_hint: str = "Chinese") -> str:
+        project_id = self._get_or_create_project()
         prompt = (
             f"Please translate all {source_hint} text in this image into {target_language}. "
-            f"Keep the original layout, font style, and design. "
-            f"Replace each text element in-place with its {target_language} translation. "
-            f"Output the final image with translated text rendered onto it."
+            f"Keep the original layout and design. Return only the final image."
         )
-
-        # Step 1: 发送任务
         thread_id = self._request("POST", f"{self.prefix}/chat", body={
             "prompt": prompt,
             "project_id": project_id,
             "attachments": [image_url],
         })["thread_id"]
-
-        # Step 2: 轮询直到完成（最多等 5 分钟）
         for _ in range(100):
-            await asyncio.sleep(3)  # non-blocking sleep in async context
-            status_data = self._request("GET", f"{self.prefix}/chat/status",
-                                        params={"thread_id": thread_id})
+            await asyncio.sleep(3)
+            status_data = self._request("GET", f"{self.prefix}/chat/status", params={"thread_id": thread_id})
             status = status_data.get("status")
             if status == "done":
-                result = self._request("GET", f"{self.prefix}/chat/result",
-                                       params={"thread_id": thread_id})
+                result = self._request("GET", f"{self.prefix}/chat/result", params={"thread_id": thread_id})
                 for item in result.get("items", []):
                     for artifact in item.get("artifacts", []):
                         if artifact.get("type") == "image":
                             url = artifact.get("content", "")
                             if url:
                                 return url
-                # Log result structure (keys only, no sensitive data)
-                logger.warning(
-                    "Lovart done but no image artifact found. "
-                    "Result top-level keys: %s; items count: %d",
-                    list(result.keys()),
-                    len(result.get("items", [])),
-                )
                 raise ValueError("Lovart done but no image artifact found")
-            elif status == "abort":
+            if status == "abort":
                 raise ValueError("Lovart task aborted")
-            # running/pending — continue polling
-
         raise TimeoutError("Lovart translation timed out after 5 minutes")

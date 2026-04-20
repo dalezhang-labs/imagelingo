@@ -7,3 +7,6 @@ cloudinary
 psycopg2-binary
 pytest
 pytest-asyncio
+pillow
+easyocr
+deepl

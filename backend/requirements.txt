@@ -3,11 +3,6 @@ uvicorn
 python-multipart
 httpx
 python-dotenv
-paddlepaddle
-paddleocr
-Pillow
-numpy
-deepl
 cloudinary
 psycopg2-binary
 pytest

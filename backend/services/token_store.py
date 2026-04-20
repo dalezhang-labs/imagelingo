@@ -37,3 +37,12 @@ def get_token(handle: str) -> str | None:
     if expires_at <= datetime.now(timezone.utc):
         return None
     return access_token
+
+
+def refresh_token_if_needed(handle: str) -> str | None:
+    """
+    Returns a valid token if available.
+    Shopline tokens expire in 10 hours; re-auth via OAuth is required when expired.
+    This function returns None if the token is expired, signaling re-auth is needed.
+    """
+    return get_token(handle)

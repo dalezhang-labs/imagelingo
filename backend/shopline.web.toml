@@ -1,0 +1,3 @@
+type = "backend"
+dev = "uvicorn main:app --reload"
+build = "echo ok"

@@ -2,8 +2,19 @@
 Lovart Service — 直接调用 Lovart Agent API 完成图片翻译渲染。
 使用 AK/SK HMAC-SHA256 认证，API 对齐 agent_skill.py。
 """
-import hashlib, hmac, json, ssl, time, urllib.request, urllib.parse, urllib.error, os
-from typing import Optional
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import ssl
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import os
+
+logger = logging.getLogger(__name__)
 
 LOVART_BASE_URL = os.environ.get("LOVART_BASE_URL", "https://lgw.lovart.ai")
 LOVART_PREFIX = "/v1/openapi"
@@ -16,6 +27,8 @@ if os.environ.get("LOVART_INSECURE_SSL") == "1":
 
 class LovartService:
     def __init__(self):
+        from backend.config import validate_lovart
+        validate_lovart()
         self.access_key = os.environ["LOVART_ACCESS_KEY"]
         self.secret_key = os.environ["LOVART_SECRET_KEY"]
         self.base_url = LOVART_BASE_URL
@@ -38,15 +51,41 @@ class LovartService:
             "User-Agent": "Mozilla/5.0 LovartImageLingo/1.0",
         }
 
-    def _request(self, method: str, path: str, body=None, params=None) -> dict:
+    def _request(self, method: str, path: str, body=None, params=None, retries: int = 3) -> dict:
         url = f"{self.base_url}{path}"
         if params:
             url += "?" + urllib.parse.urlencode(params)
         data = json.dumps(body).encode() if body is not None else None
-        headers = self._sign(method, path)
-        req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=120, context=_ssl_ctx) as resp:
-            result = json.loads(resp.read().decode())
+        last_err = None
+
+        for attempt in range(retries):
+            headers = self._sign(method, path)
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(req, timeout=120, context=_ssl_ctx) as resp:
+                    result = json.loads(resp.read().decode())
+                    break
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode()
+                if e.code in (429, 502, 503) and attempt < retries - 1:
+                    last_err = e
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                try:
+                    d = json.loads(err_body)
+                    msg = d.get("message", d.get("error", str(e)))
+                    raise ValueError(f"Lovart HTTP {e.code}: {msg}")
+                except (json.JSONDecodeError, KeyError):
+                    raise ValueError(f"Lovart HTTP {e.code}: {err_body[:200]}")
+            except (urllib.error.URLError, ssl.SSLError, OSError) as e:
+                last_err = e
+                if attempt < retries - 1:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                raise ValueError(f"Lovart connection failed after {retries} attempts: {e}")
+        else:
+            raise ValueError(f"Lovart connection failed: {last_err}")
+
         if isinstance(result, dict) and result.get("code", 0) != 0:
             raise ValueError(f"Lovart API error: {result.get('message', result)}")
         return result.get("data", result) if isinstance(result, dict) else result
@@ -90,7 +129,7 @@ class LovartService:
 
         # Step 2: 轮询直到完成（最多等 5 分钟）
         for _ in range(100):
-            time.sleep(3)
+            await asyncio.sleep(3)  # non-blocking sleep in async context
             status_data = self._request("GET", f"{self.prefix}/chat/status",
                                         params={"thread_id": thread_id})
             status = status_data.get("status")
@@ -100,7 +139,16 @@ class LovartService:
                 for item in result.get("items", []):
                     for artifact in item.get("artifacts", []):
                         if artifact.get("type") == "image":
-                            return artifact.get("content", "")
+                            url = artifact.get("content", "")
+                            if url:
+                                return url
+                # Log result structure (keys only, no sensitive data)
+                logger.warning(
+                    "Lovart done but no image artifact found. "
+                    "Result top-level keys: %s; items count: %d",
+                    list(result.keys()),
+                    len(result.get("items", [])),
+                )
                 raise ValueError("Lovart done but no image artifact found")
             elif status == "abort":
                 raise ValueError("Lovart task aborted")

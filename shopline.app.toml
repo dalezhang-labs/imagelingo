@@ -1,3 +1,13 @@
 
+appName = "ImageLingo"
+appKey = "4df5cb69f34ce735d391163ed0a9b32a870e6707"
+appUrl = "https://costs-referring-beth-retain.trycloudflare.com"
+appCallbackUrlList = [
+  "https://costs-referring-beth-retain.trycloudflare.com/api/auth/callback"
+]
+isNewWindow = false
+subPathPrefix = "apps"
+proxyUrl = ""
+
 [access_scopes]
 scopes = "write_products"

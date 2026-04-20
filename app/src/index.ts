@@ -3,10 +3,12 @@ import { join } from 'path';
 import shopline from './shopline';
 import { readFileSync } from 'fs';
 import serveStatic from 'serve-static';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import { webhooksController } from './controller/webhook';
 import createProductController from './controller/product/create';
 
 const PORT = parseInt(process.env.BACKEND_PORT || process.env.PORT, 10);
+const PYTHON_BACKEND = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
 
 const STATIC_PATH =
   process.env.NODE_ENV === 'production'
@@ -15,12 +17,23 @@ const STATIC_PATH =
 
 const app = express();
 
-app.get(shopline.config.auth.path, shopline.auth.begin());
+// Proxy /api/auth and /api/translate to Python FastAPI backend
+// Must be BEFORE Shopline SDK auth routes
+app.use('/api/auth', createProxyMiddleware({
+  target: PYTHON_BACKEND,
+  changeOrigin: true,
+  pathRewrite: function(_path: string, req: any) { return req.originalUrl; },
+}));
 
-app.get(shopline.config.auth.callbackPath, shopline.auth.callback(), shopline.redirectToAppHome());
+app.use('/api/translate', createProxyMiddleware({
+  target: PYTHON_BACKEND,
+  changeOrigin: true,
+  pathRewrite: function(_path: string, req: any) { return req.originalUrl; },
+}));
+
 app.post('/api/webhooks', express.text({ type: '*/*' }), webhooksController());
 
-// api path for frontend/vite.config
+// Shopline session validation for other /api/* routes
 app.use('/api/*', express.text({ type: '*/*' }), shopline.validateAuthentication());
 
 app.get('/api/products/create', createProductController);

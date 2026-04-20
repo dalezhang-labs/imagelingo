@@ -150,10 +150,21 @@ async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_langu
 
 @router.post("/", response_model=TranslateResponse)
 async def start_translation(req: TranslateRequest, background_tasks: BackgroundTasks):
-    token = get_token(req.store_handle)
+    handle = req.store_handle.strip()
+
+    # In dev/embedded mode, store_handle may be empty — fall back to the only store in DB
+    if not handle:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT handle FROM imagelingo.stores LIMIT 1")
+                row = cur.fetchone()
+        if row:
+            handle = row[0]
+
+    token = get_token(handle)
     if not token:
         raise HTTPException(status_code=401, detail="Store not authenticated or token expired")
-    store_id = _get_store_id(req.store_handle)
+    store_id = _get_store_id(handle)
     if not store_id:
         raise HTTPException(status_code=404, detail="Store not found")
     if not _check_quota(store_id):

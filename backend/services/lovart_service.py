@@ -119,11 +119,13 @@ class LovartService:
                 raise ValueError("Lovart done but no image artifact found")
         raise TimeoutError("Lovart translation timed out")
 
-    async def translate_image(self, image_url: str, target_language: str, source_hint: str = "Chinese") -> str:
+    async def translate_image(self, image_url: str, target_language: str, source_hint: str = "auto") -> str:
         project_id = self._get_or_create_project()
         prompt = (
-            f"Please translate all {source_hint} text in this image into {target_language}. "
-            f"Keep the original layout and design. Return only the final image."
+            f"Translate ALL text visible in this image into {target_language}. "
+            f"Generate a new version of this image where every piece of text has been replaced "
+            f"with its {target_language} translation. Keep the exact same layout, colors, fonts, "
+            f"and design. Output the final translated image."
         )
         thread_id = self._request("POST", f"{self.prefix}/chat", body={
             "prompt": prompt,
@@ -136,13 +138,36 @@ class LovartService:
             status = status_data.get("status")
             if status == "done":
                 result = self._request("GET", f"{self.prefix}/chat/result", params={"thread_id": thread_id})
+                logger.warning("Lovart result payload: %s", json.dumps(result, default=str)[:2000])
                 for item in result.get("items", []):
                     for artifact in item.get("artifacts", []):
                         if artifact.get("type") == "image":
                             url = artifact.get("content", "")
                             if url:
                                 return url
-                raise ValueError("Lovart done but no image artifact found")
+                # Also check for direct image URLs in other fields
+                for item in result.get("items", []):
+                    for artifact in item.get("artifacts", []):
+                        logger.warning("Lovart artifact: type=%s keys=%s", artifact.get("type"), list(artifact.keys()))
+                        # Try url field as fallback
+                        url = artifact.get("url") or artifact.get("content") or artifact.get("data")
+                        if url and isinstance(url, str) and ("http" in url or url.startswith("data:")):
+                            return url
+                # Check if any item has image_url or attachments
+                for item in result.get("items", []):
+                    for key in ("image_url", "image", "url", "attachment"):
+                        val = item.get(key)
+                        if val and isinstance(val, str) and val.startswith("http"):
+                            return val
+                    # Check attachments list
+                    for att in item.get("attachments", []):
+                        if isinstance(att, str) and att.startswith("http"):
+                            return att
+                        if isinstance(att, dict):
+                            url = att.get("url") or att.get("content")
+                            if url and isinstance(url, str) and url.startswith("http"):
+                                return url
+                raise ValueError(f"Lovart done but no image artifact found. Response items: {json.dumps(result.get('items', []), default=str)[:500]}")
             if status == "abort":
                 raise ValueError("Lovart task aborted")
         raise TimeoutError("Lovart translation timed out after 5 minutes")

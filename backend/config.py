@@ -2,10 +2,13 @@
 Fail-fast environment variable validation.
 Call validate_env() at startup or before using external services.
 """
+from __future__ import annotations
+
 import os
+from typing import Dict, List, Optional
 
 # Keys required for the full pipeline
-_REQUIRED: dict[str, str] = {
+_REQUIRED: Dict[str, str] = {
     "SHOPLINE_APP_KEY": "Shopline app key",
     "SHOPLINE_APP_SECRET": "Shopline app secret",
     "SHOPLINE_APP_URL": "Shopline app URL",
@@ -19,7 +22,7 @@ _REQUIRED: dict[str, str] = {
 }
 
 
-def validate_env(keys: list[str] | None = None) -> None:
+def validate_env(keys: Optional[List[str]] = None) -> None:
     """
     Raise RuntimeError listing every missing key (no values exposed).
     Pass a subset of keys to check only those.

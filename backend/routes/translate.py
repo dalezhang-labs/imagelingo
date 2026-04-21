@@ -1,4 +1,4 @@
-"""Translation pipeline routes — OCR → Lovart (translate+render) → return image URL."""
+"""Translation pipeline routes — original image → Lovart (auto-detect + translate) → return image URL."""
 from __future__ import annotations
 
 import logging
@@ -38,7 +38,6 @@ class TranslateResponse(BaseModel):
 class TestTranslateRequest(BaseModel):
     image_url: str
     target_language: str = "English"
-    source_hint: str = "zh"
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────
@@ -135,31 +134,13 @@ def _check_quota(store_id: str) -> tuple[bool, int, int]:
 
 async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_languages: list[str]):
     from backend.services.lovart_service import LovartService
-    from backend.services.ocr_service import OCRService
-    import urllib.request
 
     _update_job_status(job_id, "processing")
     try:
-        # Step 1: OCR
-        ocr_texts: list[str] = []
-        try:
-            ocr = OCRService(lang_groups=[["ch_sim", "en"]])
-            req = urllib.request.Request(image_url, headers={"User-Agent": "ImageLingo/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                image_bytes = resp.read()
-            ocr_results = await ocr.extract_text(image_bytes)
-            ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
-            logger.info("OCR extracted %d text regions", len(ocr_texts))
-        except Exception as ocr_err:
-            logger.warning("OCR failed (continuing without): %s", ocr_err)
-
-        # Step 2: Lovart translate + render for each language — URL returned directly
         lovart = LovartService()
         for lang in target_languages:
             lang_name = LANG_NAMES.get(lang.upper(), lang)
-            output_url = await lovart.translate_image(
-                image_url, lang_name, source_hint="zh", ocr_texts=ocr_texts or None,
-            )
+            output_url = await lovart.translate_image(image_url, lang_name)
             _save_translated_image(job_id, lang, output_url)
         _update_job_status(job_id, "done")
         _increment_usage(store_id)
@@ -185,33 +166,15 @@ async def start_translation(req: TranslateRequest, background_tasks: BackgroundT
 
 @router.post("/test")
 async def test_translate(req: TestTranslateRequest):
-    """Dev/test endpoint: run the full OCR → Lovart pipeline synchronously, no DB/auth required."""
+    """Dev/test endpoint: send image directly to Lovart for translation, no DB/auth required."""
     from backend.services.lovart_service import LovartService
-    from backend.services.ocr_service import OCRService
-    import urllib.request
 
-    # Step 1: OCR
-    ocr_texts: list[str] = []
-    try:
-        ocr = OCRService(lang_groups=[["ch_sim", "en"]])
-        req_http = urllib.request.Request(req.image_url, headers={"User-Agent": "ImageLingo/1.0"})
-        with urllib.request.urlopen(req_http, timeout=30) as resp:
-            image_bytes = resp.read()
-        ocr_results = await ocr.extract_text(image_bytes)
-        ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
-    except Exception as e:
-        logger.warning("OCR failed: %s", e)
-
-    # Step 2: Lovart
     lovart = LovartService()
-    output_url = await lovart.translate_image(
-        req.image_url, req.target_language, source_hint=req.source_hint, ocr_texts=ocr_texts or None,
-    )
+    output_url = await lovart.translate_image(req.image_url, req.target_language)
 
     return {
         "original_image_url": req.image_url,
         "target_language": req.target_language,
-        "ocr_texts": ocr_texts,
         "translated_image_url": output_url,
     }
 
@@ -220,37 +183,19 @@ async def test_translate(req: TestTranslateRequest):
 async def test_translate_upload(
     file: UploadFile = File(...),
     target_language: str = "English",
-    source_hint: str = "zh",
 ):
-    """Dev/test endpoint: upload an image file, run OCR → Lovart, return result."""
+    """Dev/test endpoint: upload an image file, send to Lovart, return result."""
     from backend.services.lovart_service import LovartService
-    from backend.services.ocr_service import OCRService
 
     image_bytes = await file.read()
-
-    # Step 1: OCR
-    ocr_texts: list[str] = []
-    try:
-        ocr = OCRService(lang_groups=[["ch_sim", "en"]])
-        ocr_results = await ocr.extract_text(image_bytes)
-        ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
-    except Exception as e:
-        logger.warning("OCR failed: %s", e)
-
-    # Upload to Lovart CDN so we have a public URL for the chat API
     lovart = LovartService()
     filename = file.filename or "upload.jpg"
     cdn_url = lovart.upload_file(image_bytes, filename)
-
-    # Step 2: Lovart translate
-    output_url = await lovart.translate_image(
-        cdn_url, target_language, source_hint=source_hint, ocr_texts=ocr_texts or None,
-    )
+    output_url = await lovart.translate_image(cdn_url, target_language)
 
     return {
         "filename": filename,
         "target_language": target_language,
-        "ocr_texts": ocr_texts,
         "uploaded_url": cdn_url,
         "translated_image_url": output_url,
     }

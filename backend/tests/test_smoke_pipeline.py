@@ -142,26 +142,16 @@ class TestQuotaCheck:
 
 
 class TestLovartPromptBuilding:
-    def test_prompt_with_ocr_context(self):
+    def test_prompt_contains_target_language(self):
         from backend.services.lovart_service import LovartService
-        svc = LovartService.__new__(LovartService)
-        prompt = svc._build_prompt("English", "zh", ["高级保湿面霜", "售价128元"])
+        prompt = LovartService._build_prompt("English")
         assert "English" in prompt
-        assert "Chinese" in prompt
-        assert "高级保湿面霜" in prompt
+        assert "translate" in prompt.lower()
 
-    def test_prompt_without_ocr(self):
+    def test_prompt_different_language(self):
         from backend.services.lovart_service import LovartService
-        svc = LovartService.__new__(LovartService)
-        prompt = svc._build_prompt("Japanese", "auto", None)
+        prompt = LovartService._build_prompt("Japanese")
         assert "Japanese" in prompt
-        assert "OCR" not in prompt
-
-    def test_prompt_empty_ocr_list(self):
-        from backend.services.lovart_service import LovartService
-        svc = LovartService.__new__(LovartService)
-        prompt = svc._build_prompt("Korean", "zh", [])
-        assert "Korean" in prompt
 
 
 class TestLovartImageExtraction:

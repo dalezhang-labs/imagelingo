@@ -1,5 +1,7 @@
 """Lovart Service — direct Lovart Agent API integration for image translation rendering.
 Uses AK/SK HMAC-SHA256 auth and is aligned to the documented /v1/openapi endpoints.
+
+Flow: original image → Lovart (auto-detect text + translate + render) → translated image URL.
 """
 from __future__ import annotations
 
@@ -26,33 +28,16 @@ if os.environ.get("LOVART_INSECURE_SSL") == "1":
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode = ssl.CERT_NONE
 
-PROMPT_TEMPLATE_WITH_OCR = (
-    "This is a product image containing text in {source_lang}. "
-    "The OCR-detected text regions are:\n{ocr_text}\n\n"
-    "Task: Generate a new version of this exact image where ALL text has been "
+PROMPT_TEMPLATE = (
+    "This is a product image that may contain text. "
+    "Generate a new version of this exact image where ALL visible text has been "
     "accurately translated into {target_lang}. Requirements:\n"
-    "1. Translate every piece of text faithfully — do not omit any text region\n"
+    "1. Identify every piece of text in the image and translate it faithfully\n"
     "2. Keep the EXACT same image layout, background, colors, and visual design\n"
     "3. Match the original font style, size, and positioning as closely as possible\n"
     "4. Preserve all non-text elements (logos, icons, product photos) unchanged\n"
     "5. Output the final translated image"
 )
-
-PROMPT_TEMPLATE_NO_OCR = (
-    "This is a product image containing text. "
-    "Generate a new version of this exact image where ALL visible text has been "
-    "accurately translated into {target_lang}. Requirements:\n"
-    "1. Translate every piece of text faithfully\n"
-    "2. Keep the EXACT same image layout, background, colors, and visual design\n"
-    "3. Match the original font style, size, and positioning as closely as possible\n"
-    "4. Preserve all non-text elements unchanged\n"
-    "5. Output the final translated image"
-)
-
-SOURCE_LANG_MAP = {
-    "zh": "Chinese", "zh-CN": "Chinese", "zh-TW": "Chinese (Traditional)",
-    "en": "English", "ja": "Japanese", "ko": "Korean",
-}
 
 
 class LovartService:
@@ -148,14 +133,9 @@ class LovartService:
         })
         return result.get("project_id", "")
 
-    def _build_prompt(self, target_language: str, source_hint: str, ocr_texts: list[str] | None) -> str:
-        source_lang = SOURCE_LANG_MAP.get(source_hint, "the source language")
-        if ocr_texts:
-            ocr_block = "\n".join(f"- \"{t}\"" for t in ocr_texts)
-            return PROMPT_TEMPLATE_WITH_OCR.format(
-                source_lang=source_lang, target_lang=target_language, ocr_text=ocr_block,
-            )
-        return PROMPT_TEMPLATE_NO_OCR.format(target_lang=target_language)
+    @staticmethod
+    def _build_prompt(target_language: str) -> str:
+        return PROMPT_TEMPLATE.format(target_lang=target_language)
 
     @staticmethod
     def _extract_image_url(result: dict) -> str | None:
@@ -184,15 +164,9 @@ class LovartService:
                         return url
         return None
 
-    async def translate_image(
-        self,
-        image_url: str,
-        target_language: str,
-        source_hint: str = "zh",
-        ocr_texts: list[str] | None = None,
-    ) -> str:
+    async def translate_image(self, image_url: str, target_language: str) -> str:
         project_id = self._get_or_create_project()
-        prompt = self._build_prompt(target_language, source_hint, ocr_texts)
+        prompt = self._build_prompt(target_language)
 
         chat_body: dict = {
             "prompt": prompt,

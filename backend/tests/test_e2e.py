@@ -2,10 +2,10 @@
 """
 ImageLingo End-to-End Pipeline Test
 
-Tests the full translation pipeline: OCR → Lovart → return translated image URL
+Tests the full translation pipeline: Image → Lovart → translated image URL
 
 Usage:
-  # Dry run (mocked external services, real OCR):
+  # Dry run (mocked external services):
     python backend/tests/test_e2e.py
 
   # Live run (requires LOVART_ACCESS_KEY, LOVART_SECRET_KEY):
@@ -30,9 +30,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-logger = logging.getLogger("e2e")
 
-FIXTURE_IMAGE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_chinese.jpg")
 TARGET_LANGUAGES = ["English", "Japanese"]
 
 
@@ -42,42 +40,17 @@ def step(name: str):
     print(f"{'='*60}")
 
 
-def test_ocr():
-    step("OCR — Extract text from Chinese product image")
-    from backend.services.ocr_service import OCRService
-
-    if not os.path.exists(FIXTURE_IMAGE):
-        print("  SKIP: fixture image not found at", FIXTURE_IMAGE)
-        return []
-
-    with open(FIXTURE_IMAGE, "rb") as f:
-        image_bytes = f.read()
-
-    svc = OCRService(lang_groups=[["ch_sim", "en"]])
-    results = asyncio.run(svc.extract_text(image_bytes))
-
-    print(f"  Found {len(results)} text regions:")
-    for r in results:
-        print(f"    [{r['confidence']:.2f}] {r['text']}")
-
-    assert len(results) > 0, "OCR should detect at least one text region"
-    print("  ✅ OCR PASSED")
-    return [r["text"] for r in results if r.get("confidence", 0) > 0.3]
-
-
 def test_lovart_prompt_building():
     step("Lovart — Prompt template validation")
     from backend.services.lovart_service import LovartService
 
-    svc_cls = LovartService.__new__(LovartService)
-    prompt = svc_cls._build_prompt("English", "zh", ["高级保湿面霜", "规格 50毫升"])
-    assert "高级保湿面霜" in prompt
+    prompt = LovartService._build_prompt("English")
     assert "English" in prompt
-    print(f"  Prompt with OCR ({len(prompt)} chars): OK")
+    print(f"  Prompt ({len(prompt)} chars): OK")
 
-    prompt_no_ocr = svc_cls._build_prompt("Japanese", "auto", None)
-    assert "Japanese" in prompt_no_ocr
-    print(f"  Prompt without OCR ({len(prompt_no_ocr)} chars): OK")
+    prompt_ja = LovartService._build_prompt("Japanese")
+    assert "Japanese" in prompt_ja
+    print(f"  Prompt Japanese ({len(prompt_ja)} chars): OK")
     print("  ✅ PROMPT TEMPLATES PASSED")
 
 
@@ -97,7 +70,7 @@ def test_lovart_result_parsing():
     print("  ✅ RESULT PARSING PASSED")
 
 
-def test_lovart_live(image_url: str, ocr_texts: list[str]):
+def test_lovart_live(image_url: str):
     step("Lovart — LIVE API translation test")
     from backend.services.lovart_service import LovartService
 
@@ -108,9 +81,7 @@ def test_lovart_live(image_url: str, ocr_texts: list[str]):
         print(f"\n  Translating to {lang}...")
         t0 = time.time()
         try:
-            url = asyncio.run(svc.translate_image(
-                image_url, lang, source_hint="zh", ocr_texts=ocr_texts or None,
-            ))
+            url = asyncio.run(svc.translate_image(image_url, lang))
             elapsed = time.time() - t0
             results[lang] = url
             print(f"    ✅ {lang}: {url} ({elapsed:.1f}s)")
@@ -140,7 +111,6 @@ def main():
     print(f"  Mode: {'LIVE' if args.live else 'DRY RUN (mocked)'}")
     print("=" * 60)
 
-    ocr_texts = test_ocr()
     test_lovart_prompt_building()
     test_lovart_result_parsing()
 
@@ -154,7 +124,7 @@ def main():
             print("\n  No --image-url provided. Using a public Chinese product image for testing.")
             image_url = "https://img.alicdn.com/imgextra/i4/2206686532834/O1CN01JqGSMo1TfN0XQmCIR_!!2206686532834.jpg"
 
-        test_lovart_live(image_url, ocr_texts)
+        test_lovart_live(image_url)
 
     print("\n" + "=" * 60)
     print("  ALL TESTS PASSED ✅" if not args.live else "  LIVE TESTS COMPLETED")

@@ -44,7 +44,7 @@ python backend/tests/test_full_pipeline.py --image-url https://example.com/produ
 # With a public image URL
 curl -X POST http://localhost:8000/api/translate/test \
   -H "Content-Type: application/json" \
-  -d '{"image_url": "https://img.alicdn.com/imgextra/i4/2206686532834/O1CN01JqGSMo1TfN0XQmCIR_!!2206686532834.jpg", "target_language": "English"}'
+  -d '{"image_url": "https://example.com/product.jpg", "target_language": "English"}'
 
 # Upload a local file
 curl -X POST http://localhost:8000/api/translate/test/upload \
@@ -62,8 +62,8 @@ pytest backend/tests/test_smoke_pipeline.py -v
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /health` | None | Health check |
-| `POST /api/translate/test` | None | Dev: OCR → Lovart → return URL (no DB) |
-| `POST /api/translate/test/upload` | None | Dev: upload file → OCR → Lovart → return URL |
+| `POST /api/translate/test` | None | Dev: image → Lovart → return URL (no DB) |
+| `POST /api/translate/test/upload` | None | Dev: upload file → Lovart → return URL |
 | `POST /api/translate/` | Store token | Production: create translation job |
 | `GET /api/translate/jobs/{id}` | None | Get job status + results |
 | `GET /api/translate/history` | None | List translation history |
@@ -71,9 +71,8 @@ pytest backend/tests/test_smoke_pipeline.py -v
 ### 6. Architecture
 
 ```
-Image → EasyOCR (extract text) → Lovart API (translate + re-render) → Translated image URL
+Original image → Lovart API (auto-detect text + translate + re-render) → Translated image URL
 ```
 
+- No OCR step — Lovart handles text detection, translation, and rendering in one step
 - No Cloudinary — Lovart returns CDN URLs directly
-- OCR is optional — pipeline works without it, but OCR context improves translation accuracy
-- Lovart handles both translation and image rendering in one step

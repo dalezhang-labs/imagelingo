@@ -157,3 +157,50 @@ class TestQuotaCheck:
             ok, used, limit = _check_quota("fake-store-id")
             assert ok is True
             assert limit == 5
+
+
+class TestLovartPromptBuilding:
+    """Test the optimized prompt templates."""
+
+    def test_prompt_with_ocr_context(self):
+        from backend.services.lovart_service import LovartService
+        svc = LovartService.__new__(LovartService)
+        prompt = svc._build_prompt("English", "zh", ["高级保湿面霜", "售价128元"])
+        assert "English" in prompt
+        assert "Chinese" in prompt
+        assert "高级保湿面霜" in prompt
+        assert "售价128元" in prompt
+
+    def test_prompt_without_ocr(self):
+        from backend.services.lovart_service import LovartService
+        svc = LovartService.__new__(LovartService)
+        prompt = svc._build_prompt("Japanese", "auto", None)
+        assert "Japanese" in prompt
+        assert "OCR" not in prompt
+
+    def test_prompt_empty_ocr_list(self):
+        from backend.services.lovart_service import LovartService
+        svc = LovartService.__new__(LovartService)
+        prompt = svc._build_prompt("Korean", "zh", [])
+        # Empty list should use no-OCR template
+        assert "Korean" in prompt
+
+
+class TestLovartImageExtraction:
+    """Test the static _extract_image_url method."""
+
+    def test_standard_image_artifact(self):
+        from backend.services.lovart_service import LovartService
+        result = {"items": [{"artifacts": [{"type": "image", "content": "https://cdn.lovart.ai/img.png"}]}]}
+        assert LovartService._extract_image_url(result) == "https://cdn.lovart.ai/img.png"
+
+    def test_fallback_url_field(self):
+        from backend.services.lovart_service import LovartService
+        result = {"items": [{"artifacts": [{"type": "file", "url": "https://cdn.lovart.ai/img2.png"}]}]}
+        assert LovartService._extract_image_url(result) == "https://cdn.lovart.ai/img2.png"
+
+    def test_no_image_returns_none(self):
+        from backend.services.lovart_service import LovartService
+        assert LovartService._extract_image_url({}) is None
+        assert LovartService._extract_image_url({"items": []}) is None
+        assert LovartService._extract_image_url({"items": [{"artifacts": [{"type": "text", "content": "hi"}]}]}) is None

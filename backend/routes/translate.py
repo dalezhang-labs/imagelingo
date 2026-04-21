@@ -143,14 +143,33 @@ def _check_quota(store_id: str) -> tuple[bool, int, int]:
 async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_languages: list[str]):
     from backend.services.lovart_service import LovartService
     from backend.services.cloudinary_service import CloudinaryService
+    from backend.services.ocr_service import OCRService
+    import urllib.request, logging
 
+    logger = logging.getLogger(__name__)
     _update_job_status(job_id, "processing")
     try:
+        # Step 1: OCR — extract text from original image for better Lovart prompts
+        ocr_texts: list[str] = []
+        try:
+            ocr = OCRService(lang_groups=[["ch_sim", "en"]])
+            req = urllib.request.Request(image_url, headers={"User-Agent": "ImageLingo/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                image_bytes = resp.read()
+            ocr_results = await ocr.extract_text(image_bytes)
+            ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
+            logger.info("OCR extracted %d text regions from %s", len(ocr_texts), image_url)
+        except Exception as ocr_err:
+            logger.warning("OCR failed (continuing without): %s", ocr_err)
+
+        # Step 2: Lovart translate + render for each language
         lovart = LovartService()
         cloudinary = CloudinaryService()
         for lang in target_languages:
             lang_name = LANG_NAMES.get(lang.upper(), lang)
-            translated_url = await lovart.translate_image(image_url, lang_name)
+            translated_url = await lovart.translate_image(
+                image_url, lang_name, source_hint="zh", ocr_texts=ocr_texts or None,
+            )
             public_id = f"{job_id}_{lang.replace('-', '_').lower()}"
             output_url = await cloudinary.upload_image_from_url(translated_url, public_id)
             _save_translated_image(job_id, lang, output_url)

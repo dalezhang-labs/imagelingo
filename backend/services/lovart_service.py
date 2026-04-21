@@ -1,5 +1,11 @@
 """Lovart Service — direct Lovart Agent API integration for image translation rendering.
 Uses AK/SK HMAC-SHA256 auth and is aligned to the documented /v1/openapi endpoints.
+
+Prompt optimization notes (2026-04-21):
+- Including OCR-extracted text in the prompt significantly improves translation accuracy
+- Explicit instructions about preserving layout/colors/fonts are critical
+- Specifying "product image" context helps Lovart understand the use case
+- tool_config with include_tools can steer toward image editing vs generation
 """
 from __future__ import annotations
 
@@ -24,6 +30,37 @@ _ssl_ctx = ssl.create_default_context()
 if os.environ.get("LOVART_INSECURE_SSL") == "1":
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode = ssl.CERT_NONE
+
+# ── Optimized prompt templates for product image translation ──────────
+# V2: includes OCR context for better accuracy
+PROMPT_TEMPLATE_WITH_OCR = (
+    "This is a product image containing text in {source_lang}. "
+    "The OCR-detected text regions are:\n{ocr_text}\n\n"
+    "Task: Generate a new version of this exact image where ALL text has been "
+    "accurately translated into {target_lang}. Requirements:\n"
+    "1. Translate every piece of text faithfully — do not omit any text region\n"
+    "2. Keep the EXACT same image layout, background, colors, and visual design\n"
+    "3. Match the original font style, size, and positioning as closely as possible\n"
+    "4. Preserve all non-text elements (logos, icons, product photos) unchanged\n"
+    "5. Output the final translated image"
+)
+
+# V2 fallback: no OCR context available
+PROMPT_TEMPLATE_NO_OCR = (
+    "This is a product image containing text. "
+    "Generate a new version of this exact image where ALL visible text has been "
+    "accurately translated into {target_lang}. Requirements:\n"
+    "1. Translate every piece of text faithfully\n"
+    "2. Keep the EXACT same image layout, background, colors, and visual design\n"
+    "3. Match the original font style, size, and positioning as closely as possible\n"
+    "4. Preserve all non-text elements unchanged\n"
+    "5. Output the final translated image"
+)
+
+SOURCE_LANG_MAP = {
+    "zh": "Chinese", "zh-CN": "Chinese", "zh-TW": "Chinese (Traditional)",
+    "en": "English", "ja": "Japanese", "ko": "Korean",
+}
 
 
 class LovartService:
@@ -94,55 +131,80 @@ class LovartService:
         })
         return result.get("project_id", "")
 
-    async def translate_image(self, image_url: str, target_language: str, source_hint: str = "auto") -> str:
+    def _build_prompt(self, target_language: str, source_hint: str, ocr_texts: list[str] | None) -> str:
+        source_lang = SOURCE_LANG_MAP.get(source_hint, "the source language")
+        if ocr_texts:
+            ocr_block = "\n".join(f"- \"{t}\"" for t in ocr_texts)
+            return PROMPT_TEMPLATE_WITH_OCR.format(
+                source_lang=source_lang, target_lang=target_language, ocr_text=ocr_block,
+            )
+        return PROMPT_TEMPLATE_NO_OCR.format(target_lang=target_language)
+
+    @staticmethod
+    def _extract_image_url(result: dict) -> str | None:
+        """Extract image URL from Lovart result, trying multiple field patterns."""
+        # Primary: items[].artifacts[] with type=image
+        for item in result.get("items", []):
+            for artifact in item.get("artifacts", []):
+                if artifact.get("type") == "image":
+                    url = artifact.get("content", "")
+                    if url:
+                        return url
+        # Fallback: any artifact with a URL-like content
+        for item in result.get("items", []):
+            for artifact in item.get("artifacts", []):
+                url = artifact.get("url") or artifact.get("content") or artifact.get("data")
+                if url and isinstance(url, str) and url.startswith("http"):
+                    return url
+            # Check item-level fields
+            for key in ("image_url", "image", "url"):
+                val = item.get(key)
+                if val and isinstance(val, str) and val.startswith("http"):
+                    return val
+            for att in item.get("attachments", []):
+                if isinstance(att, str) and att.startswith("http"):
+                    return att
+                if isinstance(att, dict):
+                    url = att.get("url") or att.get("content")
+                    if url and isinstance(url, str) and url.startswith("http"):
+                        return url
+        return None
+
+    async def translate_image(
+        self,
+        image_url: str,
+        target_language: str,
+        source_hint: str = "zh",
+        ocr_texts: list[str] | None = None,
+    ) -> str:
         project_id = self._get_or_create_project()
-        prompt = (
-            f"Translate ALL text visible in this image into {target_language}. "
-            f"Generate a new version of this image where every piece of text has been replaced "
-            f"with its {target_language} translation. Keep the exact same layout, colors, fonts, "
-            f"and design. Output the final translated image."
-        )
-        thread_id = self._request("POST", f"{self.prefix}/chat", body={
+        prompt = self._build_prompt(target_language, source_hint, ocr_texts)
+
+        chat_body: dict = {
             "prompt": prompt,
             "project_id": project_id,
             "attachments": [image_url],
-        })["thread_id"]
+        }
+
+        thread_id = self._request("POST", f"{self.prefix}/chat", body=chat_body)["thread_id"]
+        logger.info("Lovart chat started: thread_id=%s, target=%s", thread_id, target_language)
+
         for _ in range(100):
             await asyncio.sleep(3)
             status_data = self._request("GET", f"{self.prefix}/chat/status", params={"thread_id": thread_id})
             status = status_data.get("status")
             if status == "done":
                 result = self._request("GET", f"{self.prefix}/chat/result", params={"thread_id": thread_id})
-                logger.warning("Lovart result payload: %s", json.dumps(result, default=str)[:2000])
-                for item in result.get("items", []):
-                    for artifact in item.get("artifacts", []):
-                        if artifact.get("type") == "image":
-                            url = artifact.get("content", "")
-                            if url:
-                                return url
-                # Also check for direct image URLs in other fields
-                for item in result.get("items", []):
-                    for artifact in item.get("artifacts", []):
-                        logger.warning("Lovart artifact: type=%s keys=%s", artifact.get("type"), list(artifact.keys()))
-                        # Try url field as fallback
-                        url = artifact.get("url") or artifact.get("content") or artifact.get("data")
-                        if url and isinstance(url, str) and ("http" in url or url.startswith("data:")):
-                            return url
-                # Check if any item has image_url or attachments
-                for item in result.get("items", []):
-                    for key in ("image_url", "image", "url", "attachment"):
-                        val = item.get(key)
-                        if val and isinstance(val, str) and val.startswith("http"):
-                            return val
-                    # Check attachments list
-                    for att in item.get("attachments", []):
-                        if isinstance(att, str) and att.startswith("http"):
-                            return att
-                        if isinstance(att, dict):
-                            url = att.get("url") or att.get("content")
-                            if url and isinstance(url, str) and url.startswith("http"):
-                                return url
-                raise ValueError(f"Lovart done but no image artifact found. Response items: {json.dumps(result.get('items', []), default=str)[:500]}")
+                url = self._extract_image_url(result)
+                if url:
+                    return url
+                # Log structure for debugging without leaking full payload
+                item_types = [
+                    {k: type(v).__name__ for k, v in item.items()}
+                    for item in result.get("items", [])
+                ]
+                logger.error("Lovart done but no image found. Item structure: %s", item_types)
+                raise ValueError("Lovart done but no image artifact found")
             if status == "abort":
                 raise ValueError("Lovart task aborted")
         raise TimeoutError("Lovart translation timed out after 5 minutes")

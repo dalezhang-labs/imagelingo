@@ -50,6 +50,9 @@ export default function Translate() {
       .catch(() => {});
   }, [storeHandle]);
 
+  const [authExpired, setAuthExpired] = useState(false);
+  const [reauthUrl, setReauthUrl] = useState<string | null>(null);
+
   const validUrls = imageUrls.filter((u) => /^https?:\/\//i.test(u.trim()));
   const canSubmit = validUrls.length > 0 && selectedLangs.length > 0 && !loading;
 
@@ -95,10 +98,23 @@ export default function Translate() {
     }, 2500);
   };
 
+  const handleReauth = async () => {
+    if (!storeHandle) return;
+    try {
+      const res = await fetch(apiUrl(`/api/imagelingo/auth/reauth-url?handle=${encodeURIComponent(storeHandle)}`));
+      if (res.ok) {
+        const { auth_url } = await res.json();
+        setReauthUrl(auth_url);
+        window.open(auth_url, "_top");
+      }
+    } catch {}
+  };
+
   const handleTranslate = async () => {
     if (!canSubmit) return;
     setLoading(true);
     setJobs([]);
+    setAuthExpired(false);
     try {
       const isBatch = validUrls.length > 1;
       if (isBatch) {
@@ -114,6 +130,11 @@ export default function Translate() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
+          if (res.status === 401) {
+            setAuthExpired(true);
+            setLoading(false);
+            return;
+          }
           setJobs([{ job_id: "", status: "failed", original_image_url: "", results: {}, error: err.detail || `Error ${res.status}` }]);
           setLoading(false);
           return;
@@ -134,6 +155,11 @@ export default function Translate() {
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
+          if (res.status === 401) {
+            setAuthExpired(true);
+            setLoading(false);
+            return;
+          }
           setJobs([{ job_id: "", status: "failed", original_image_url: "", results: {}, error: err.detail || `Error ${res.status}` }]);
           setLoading(false);
           return;
@@ -165,6 +191,20 @@ export default function Translate() {
             {usage!.used >= usage!.limit
               ? <> Quota exceeded — <a href="/dashboard" className="font-semibold underline">upgrade your plan</a>.</>
               : <> Running low — consider <a href="/dashboard" className="font-semibold underline">upgrading</a>.</>}
+          </div>
+        )}
+
+        {/* Auth expired banner */}
+        {authExpired && (
+          <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-4 text-sm text-red-800">
+            <p className="font-semibold mb-1">🔑 Store authorization expired</p>
+            <p className="mb-3">Your Shopline access token has expired. Please re-authorize to continue translating.</p>
+            <button
+              onClick={handleReauth}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+            >
+              Re-authorize Store
+            </button>
           </div>
         )}
 

@@ -36,6 +36,22 @@ uvicorn backend.main:app --reload --port 8000
 
 Health check: `curl http://localhost:8000/health`
 
+## Run Tests
+
+```bash
+# Smoke tests (no credentials needed, all mocked):
+pytest backend/tests/test_smoke_pipeline.py -v
+
+# E2E dry run (tests OCR + prompt templates + result parsing, no API calls):
+python backend/tests/test_e2e.py
+
+# E2E live (requires valid LOVART_ACCESS_KEY/SECRET_KEY):
+python backend/tests/test_e2e.py --live
+
+# E2E live with custom image:
+python backend/tests/test_e2e.py --live --image-url https://your-image-url.jpg
+```
+
 ## Shopline Install → Translate Flow (shortest path)
 
 1. **Install app** — Shopline admin visits:
@@ -64,14 +80,11 @@ Health check: `curl http://localhost:8000/health`
    ```
    Statuses: `pending` → `processing` → `done` / `failed`
 
-## Run Smoke Tests (no real credentials needed)
-
-```bash
-cd <repo-root>
-pytest backend/tests/test_smoke_pipeline.py -v
-```
-
 ## Deploy to Railway
+
+Railway uses a Dockerfile (CPU-only PyTorch + pre-downloaded EasyOCR models).
+
+**Memory requirement**: ~1GB RAM minimum (EasyOCR + PyTorch CPU). Railway free tier (512MB) is insufficient — use a paid plan.
 
 ```bash
 # From repo root
@@ -79,3 +92,17 @@ railway up
 ```
 
 Set all env vars in Railway dashboard under Variables.
+
+## Architecture: Translation Pipeline
+
+```
+Upload image URL
+    ↓
+OCR (EasyOCR: ch_sim+en, ja+en, ko+en)
+    ↓ extracted text regions
+Lovart API (prompt includes OCR context for accuracy)
+    ↓ translated image URL
+Cloudinary (persistent hosting)
+    ↓ final URL
+Save to DB (imagelingo.translated_images)
+```

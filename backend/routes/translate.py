@@ -151,8 +151,26 @@ def _run_ocr(image_url: str) -> list[str]:
         req = urllib.request.Request(image_url, headers={"User-Agent": "ImageLingo/1.0"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             image_bytes = resp.read()
-        import asyncio
-        results = asyncio.get_event_loop().run_until_complete(ocr.extract_text(image_bytes))
+        # OCRService.extract_text is async, use wrapper for sync context
+        results = ocr.extract_text_sync(image_bytes) if hasattr(ocr, 'extract_text_sync') else []
+        texts = [r["text"] for r in results if r.get("confidence", 0) > 0.3]
+        logger.info("OCR extracted %d text regions", len(texts))
+        return texts
+    except Exception as e:
+        logger.warning("OCR failed (continuing without): %s", e)
+        return []
+
+
+async def _run_ocr_async(image_url: str) -> list[str]:
+    """Async version of OCR extraction."""
+    try:
+        from backend.services.ocr_service import OCRService
+        import urllib.request
+        ocr = OCRService(lang_groups=[["ch_sim", "en"]])
+        req = urllib.request.Request(image_url, headers={"User-Agent": "ImageLingo/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            image_bytes = resp.read()
+        results = await ocr.extract_text(image_bytes)
         texts = [r["text"] for r in results if r.get("confidence", 0) > 0.3]
         logger.info("OCR extracted %d text regions", len(texts))
         return texts
@@ -169,7 +187,7 @@ async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_langu
     _update_job_status(job_id, "processing")
     try:
         # Step 1: OCR (optional enhancement)
-        ocr_texts = _run_ocr(image_url)
+        ocr_texts = await _run_ocr_async(image_url)
 
         # Step 2: Lovart translate + render for each language
         lovart = LovartService()

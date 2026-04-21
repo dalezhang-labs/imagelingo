@@ -108,18 +108,12 @@ export default function Translate() {
   };
 
   const handleReauth = async () => {
-    if (!storeHandle) {
-      // No handle available, redirect to install endpoint directly
-      const installUrl = apiUrl("/api/imagelingo/auth/install?handle=");
-      try { window.top!.location.href = installUrl; } catch { window.location.href = installUrl; }
-      return;
-    }
     try {
-      const res = await fetch(apiUrl(`/api/imagelingo/auth/reauth-url?handle=${encodeURIComponent(storeHandle)}`));
+      const params = storeHandle ? `?handle=${encodeURIComponent(storeHandle)}` : "";
+      const res = await fetch(apiUrl(`/api/imagelingo/auth/reauth-url${params}`));
       if (res.ok) {
         const { auth_url } = await res.json();
         setReauthUrl(auth_url);
-        // Use top-level navigation to escape iframe
         try { window.top!.location.href = auth_url; } catch { window.location.href = auth_url; }
       }
     } catch {}

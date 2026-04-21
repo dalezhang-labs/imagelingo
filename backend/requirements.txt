@@ -9,4 +9,3 @@ pytest
 pytest-asyncio
 pillow
 easyocr
-deepl

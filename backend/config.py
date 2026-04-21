@@ -9,7 +9,6 @@ _REQUIRED: Dict[str, str] = {
     "SHOPLINE_APP_SECRET": "Shopline app secret",
     "SHOPLINE_APP_URL": "Shopline app URL",
     "SHOPLINE_REDIRECT_URI": "Shopline OAuth redirect URI",
-    "DEEPL_API_KEY": "DeepL API key",
     "LOVART_ACCESS_KEY": "Lovart access key (AK)",
     "LOVART_SECRET_KEY": "Lovart secret key (SK)",
     "CLOUDINARY_CLOUD_NAME": "Cloudinary cloud name",

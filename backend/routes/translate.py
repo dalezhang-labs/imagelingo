@@ -1,14 +1,19 @@
-"""Translation pipeline routes — OCR → Lovart (translate+render) → Cloudinary."""
+"""Translation pipeline routes — OCR → Lovart (translate+render) → return image URL."""
 from __future__ import annotations
 
+import base64
+import io
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from backend.db.connection import get_connection
 from backend.services.token_store import get_token
+
+logger = logging.getLogger(__name__)
 
 LANG_NAMES = {
     "EN": "English", "EN-US": "English", "EN-GB": "English",
@@ -28,25 +33,19 @@ class TranslateRequest(BaseModel):
     target_languages: list[str]
 
 
-class BatchTranslateRequest(BaseModel):
-    store_handle: str
-    product_id: str
-    image_urls: list[str]
-    target_languages: list[str]
-
-
 class TranslateResponse(BaseModel):
     job_id: str
 
 
-class BatchTranslateResponse(BaseModel):
-    job_ids: list[str]
+class TestTranslateRequest(BaseModel):
+    image_url: str
+    target_language: str = "English"
+    source_hint: str = "zh"
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────
 
 def _resolve_store(handle: str) -> tuple[str, str]:
-    """Return (store_id, handle). Raises HTTPException on failure."""
     if not handle:
         with get_connection() as conn:
             with conn.cursor() as cur:
@@ -55,7 +54,6 @@ def _resolve_store(handle: str) -> tuple[str, str]:
         if row:
             return str(row[0]), row[1]
         raise HTTPException(404, "No store found")
-
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM imagelingo.stores WHERE handle = %s", (handle,))
@@ -116,7 +114,6 @@ def _increment_usage(store_id: str):
 
 
 def _check_quota(store_id: str) -> tuple[bool, int, int]:
-    """Returns (within_quota, used, limit)."""
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -129,11 +126,9 @@ def _check_quota(store_id: str) -> tuple[bool, int, int]:
             )
             row = cur.fetchone()
     if not row:
-        # No subscription record → treat as free plan with 0 used
         return True, 0, 5
     used, limit = row
     if limit <= 0:
-        # business plan: unlimited
         return True, used, 0
     return used < limit, used, limit
 
@@ -142,14 +137,12 @@ def _check_quota(store_id: str) -> tuple[bool, int, int]:
 
 async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_languages: list[str]):
     from backend.services.lovart_service import LovartService
-    from backend.services.cloudinary_service import CloudinaryService
     from backend.services.ocr_service import OCRService
-    import urllib.request, logging
+    import urllib.request
 
-    logger = logging.getLogger(__name__)
     _update_job_status(job_id, "processing")
     try:
-        # Step 1: OCR — extract text from original image for better Lovart prompts
+        # Step 1: OCR
         ocr_texts: list[str] = []
         try:
             ocr = OCRService(lang_groups=[["ch_sim", "en"]])
@@ -158,20 +151,17 @@ async def _run_pipeline(job_id: str, store_id: str, image_url: str, target_langu
                 image_bytes = resp.read()
             ocr_results = await ocr.extract_text(image_bytes)
             ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
-            logger.info("OCR extracted %d text regions from %s", len(ocr_texts), image_url)
+            logger.info("OCR extracted %d text regions", len(ocr_texts))
         except Exception as ocr_err:
             logger.warning("OCR failed (continuing without): %s", ocr_err)
 
-        # Step 2: Lovart translate + render for each language
+        # Step 2: Lovart translate + render for each language — URL returned directly
         lovart = LovartService()
-        cloudinary = CloudinaryService()
         for lang in target_languages:
             lang_name = LANG_NAMES.get(lang.upper(), lang)
-            translated_url = await lovart.translate_image(
+            output_url = await lovart.translate_image(
                 image_url, lang_name, source_hint="zh", ocr_texts=ocr_texts or None,
             )
-            public_id = f"{job_id}_{lang.replace('-', '_').lower()}"
-            output_url = await cloudinary.upload_image_from_url(translated_url, public_id)
             _save_translated_image(job_id, lang, output_url)
         _update_job_status(job_id, "done")
         _increment_usage(store_id)
@@ -195,22 +185,77 @@ async def start_translation(req: TranslateRequest, background_tasks: BackgroundT
     return TranslateResponse(job_id=job_id)
 
 
-@router.post("/batch", response_model=BatchTranslateResponse)
-async def start_batch_translation(req: BatchTranslateRequest, background_tasks: BackgroundTasks):
-    store_id, handle = _resolve_store(req.store_handle.strip())
-    token = get_token(handle)
-    if not token:
-        raise HTTPException(401, "Store not authenticated or token expired")
-    ok, used, limit = _check_quota(store_id)
-    needed = len(req.image_urls)
-    if not ok or (limit > 0 and used + needed > limit):
-        raise HTTPException(402, f"Quota insufficient ({used}/{limit}, need {needed}). Please upgrade your plan.")
-    job_ids = []
-    for url in req.image_urls:
-        jid = _create_job(store_id, req.product_id, url, req.target_languages)
-        background_tasks.add_task(_run_pipeline, jid, store_id, url, req.target_languages)
-        job_ids.append(jid)
-    return BatchTranslateResponse(job_ids=job_ids)
+@router.post("/test")
+async def test_translate(req: TestTranslateRequest):
+    """Dev/test endpoint: run the full OCR → Lovart pipeline synchronously, no DB/auth required."""
+    from backend.services.lovart_service import LovartService
+    from backend.services.ocr_service import OCRService
+    import urllib.request
+
+    # Step 1: OCR
+    ocr_texts: list[str] = []
+    try:
+        ocr = OCRService(lang_groups=[["ch_sim", "en"]])
+        req_http = urllib.request.Request(req.image_url, headers={"User-Agent": "ImageLingo/1.0"})
+        with urllib.request.urlopen(req_http, timeout=30) as resp:
+            image_bytes = resp.read()
+        ocr_results = await ocr.extract_text(image_bytes)
+        ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
+    except Exception as e:
+        logger.warning("OCR failed: %s", e)
+
+    # Step 2: Lovart
+    lovart = LovartService()
+    output_url = await lovart.translate_image(
+        req.image_url, req.target_language, source_hint=req.source_hint, ocr_texts=ocr_texts or None,
+    )
+
+    return {
+        "original_image_url": req.image_url,
+        "target_language": req.target_language,
+        "ocr_texts": ocr_texts,
+        "translated_image_url": output_url,
+    }
+
+
+@router.post("/test/upload")
+async def test_translate_upload(
+    file: UploadFile = File(...),
+    target_language: str = "English",
+    source_hint: str = "zh",
+):
+    """Dev/test endpoint: upload an image file, run OCR → Lovart, return result."""
+    from backend.services.lovart_service import LovartService
+    from backend.services.ocr_service import OCRService
+
+    image_bytes = await file.read()
+
+    # Step 1: OCR
+    ocr_texts: list[str] = []
+    try:
+        ocr = OCRService(lang_groups=[["ch_sim", "en"]])
+        ocr_results = await ocr.extract_text(image_bytes)
+        ocr_texts = [r["text"] for r in ocr_results if r.get("confidence", 0) > 0.3]
+    except Exception as e:
+        logger.warning("OCR failed: %s", e)
+
+    # Convert to base64 data URL for Lovart (since we have bytes, not a public URL)
+    b64 = base64.b64encode(image_bytes).decode()
+    content_type = file.content_type or "image/jpeg"
+    data_url = f"data:{content_type};base64,{b64}"
+
+    # Step 2: Lovart
+    lovart = LovartService()
+    output_url = await lovart.translate_image(
+        data_url, target_language, source_hint=source_hint, ocr_texts=ocr_texts or None,
+    )
+
+    return {
+        "filename": file.filename,
+        "target_language": target_language,
+        "ocr_texts": ocr_texts,
+        "translated_image_url": output_url,
+    }
 
 
 @router.get("/jobs/{job_id}")
@@ -253,9 +298,7 @@ async def retry_job(job_id: str, background_tasks: BackgroundTasks):
     if status not in ("failed",):
         raise HTTPException(400, "Only failed jobs can be retried")
     store_id = str(store_id)
-    # Reset job
     _update_job_status(job_id, "pending")
-    # Delete old translated images for this job
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM imagelingo.translated_images WHERE job_id = %s", (job_id,))
@@ -266,13 +309,11 @@ async def retry_job(job_id: str, background_tasks: BackgroundTasks):
 
 @router.get("/history")
 async def get_history(store_handle: str = ""):
-    """Return all translation jobs for a store, newest first."""
     where = ""
     params: list = []
     if store_handle:
         where = """WHERE j.store_id = (SELECT id FROM imagelingo.stores WHERE handle = %s)"""
         params.append(store_handle)
-
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -292,7 +333,6 @@ async def get_history(store_handle: str = ""):
                 )
                 for jid, lang, url in cur.fetchall():
                     results_map[str(jid)][lang] = url
-
     return [
         {
             "id": str(j[0]),
@@ -309,7 +349,6 @@ async def get_history(store_handle: str = ""):
 
 @router.get("/usage")
 async def get_usage(store_handle: str = ""):
-    """Return current month usage + plan info."""
     month = datetime.now(timezone.utc).strftime("%Y-%m")
     if store_handle:
         store_clause = "WHERE s.handle = %s"
@@ -317,7 +356,6 @@ async def get_usage(store_handle: str = ""):
     else:
         store_clause = ""
         params = []
-
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -330,7 +368,6 @@ async def get_usage(store_handle: str = ""):
                 [month] + params,
             )
             row = cur.fetchone()
-
     if not row:
         return {"plan": "free", "limit": 5, "used": 0, "month": month}
     _, plan, limit, used = row

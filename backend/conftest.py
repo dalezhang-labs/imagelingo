@@ -28,14 +28,3 @@ if "PIL" not in sys.modules:
     pil.Image = image_mod
     sys.modules["PIL"] = pil
     sys.modules["PIL.Image"] = image_mod
-
-
-# Cloudinary stub so unittest.mock.patch("cloudinary.uploader.upload") succeeds.
-if "cloudinary" not in sys.modules:
-    cloudinary = types.ModuleType("cloudinary")
-    cloudinary.config = lambda *args, **kwargs: None
-    uploader = types.ModuleType("cloudinary.uploader")
-    uploader.upload = lambda *args, **kwargs: {"secure_url": args[0] if args else ""}
-    cloudinary.uploader = uploader
-    sys.modules["cloudinary"] = cloudinary
-    sys.modules["cloudinary.uploader"] = uploader

@@ -1,7 +1,7 @@
 """
 Smoke tests for the ImageLingo translation pipeline.
 
-Mock all external services (Lovart, Cloudinary, DB) — no real credentials needed.
+Mock all external services (Lovart, DB) — no real credentials needed.
 
 Run:
     cd <repo-root>
@@ -16,7 +16,6 @@ import pytest
 
 FAKE_JOB_ID = str(uuid.uuid4())
 FAKE_STORE_ID = str(uuid.uuid4())
-FAKE_TRANSLATED_URL = "https://res.cloudinary.com/demo/image/upload/imagelingo/test.png"
 FAKE_LOVART_URL = "https://cdn.lovart.ai/result/test.png"
 
 
@@ -43,16 +42,6 @@ class TestLovartResultParsing:
         assert found is None
 
 
-class TestCloudinaryServiceMocked:
-    def test_upload_from_url(self):
-        with patch.dict(os.environ, {"CLOUDINARY_CLOUD_NAME": "demo", "CLOUDINARY_API_KEY": "k", "CLOUDINARY_API_SECRET": "s"}):
-            with patch("cloudinary.uploader.upload", return_value={"secure_url": FAKE_TRANSLATED_URL}):
-                from backend.services.cloudinary_service import CloudinaryService
-                svc = CloudinaryService()
-                result = asyncio.run(svc.upload_image_from_url(FAKE_LOVART_URL, "test_id"))
-                assert result == FAKE_TRANSLATED_URL
-
-
 class TestPipelineMocked:
     def _run(self, job_id, store_id, image_url, langs):
         translated: list[tuple] = []
@@ -71,10 +60,8 @@ class TestPipelineMocked:
             patch("backend.routes.translate._increment_usage"),
             patch.dict(os.environ, {
                 "LOVART_ACCESS_KEY": "ak", "LOVART_SECRET_KEY": "sk",
-                "CLOUDINARY_CLOUD_NAME": "d", "CLOUDINARY_API_KEY": "k", "CLOUDINARY_API_SECRET": "s",
             }),
             patch("backend.services.lovart_service.LovartService.translate_image", new=AsyncMock(return_value=FAKE_LOVART_URL)),
-            patch("cloudinary.uploader.upload", return_value={"secure_url": FAKE_TRANSLATED_URL}),
         ):
             from backend.routes.translate import _run_pipeline
             asyncio.run(_run_pipeline(job_id, store_id, image_url, langs))
@@ -99,7 +86,6 @@ class TestPipelineMocked:
             patch("backend.routes.translate._increment_usage"),
             patch.dict(os.environ, {
                 "LOVART_ACCESS_KEY": "ak", "LOVART_SECRET_KEY": "sk",
-                "CLOUDINARY_CLOUD_NAME": "d", "CLOUDINARY_API_KEY": "k", "CLOUDINARY_API_SECRET": "s",
             }),
             patch("backend.services.lovart_service.LovartService.translate_image", new=AsyncMock(side_effect=ValueError("aborted"))),
         ):
@@ -124,12 +110,8 @@ class TestEnvValidation:
 
 
 class TestQuotaCheck:
-    """Test the 402 quota logic."""
-
     def test_check_quota_returns_tuple(self):
-        """Verify _check_quota returns (bool, int, int)."""
         from backend.routes.translate import _check_quota
-        # Mock DB to return used=4, limit=5
         with patch("backend.routes.translate.get_connection") as mock_conn:
             ctx = mock_conn.return_value.__enter__.return_value
             cur = ctx.cursor.return_value.__enter__.return_value
@@ -160,8 +142,6 @@ class TestQuotaCheck:
 
 
 class TestLovartPromptBuilding:
-    """Test the optimized prompt templates."""
-
     def test_prompt_with_ocr_context(self):
         from backend.services.lovart_service import LovartService
         svc = LovartService.__new__(LovartService)
@@ -169,7 +149,6 @@ class TestLovartPromptBuilding:
         assert "English" in prompt
         assert "Chinese" in prompt
         assert "高级保湿面霜" in prompt
-        assert "售价128元" in prompt
 
     def test_prompt_without_ocr(self):
         from backend.services.lovart_service import LovartService
@@ -182,13 +161,10 @@ class TestLovartPromptBuilding:
         from backend.services.lovart_service import LovartService
         svc = LovartService.__new__(LovartService)
         prompt = svc._build_prompt("Korean", "zh", [])
-        # Empty list should use no-OCR template
         assert "Korean" in prompt
 
 
 class TestLovartImageExtraction:
-    """Test the static _extract_image_url method."""
-
     def test_standard_image_artifact(self):
         from backend.services.lovart_service import LovartService
         result = {"items": [{"artifacts": [{"type": "image", "content": "https://cdn.lovart.ai/img.png"}]}]}

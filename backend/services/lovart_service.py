@@ -1,7 +1,5 @@
 """Lovart Service — direct Lovart Agent API integration for image translation rendering.
 Uses AK/SK HMAC-SHA256 auth and is aligned to the documented /v1/openapi endpoints.
-
-Flow: original image → Lovart (auto-detect text + translate + render) → translated image URL.
 """
 from __future__ import annotations
 
@@ -28,7 +26,19 @@ if os.environ.get("LOVART_INSECURE_SSL") == "1":
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode = ssl.CERT_NONE
 
-PROMPT_TEMPLATE = (
+PROMPT_TEMPLATE_WITH_OCR = (
+    "This is a product image containing text in {source_lang}. "
+    "The OCR-detected text regions are:\n{ocr_text}\n\n"
+    "Task: Generate a new version of this exact image where ALL text has been "
+    "accurately translated into {target_lang}. Requirements:\n"
+    "1. Translate every piece of text faithfully — do not omit any text region\n"
+    "2. Keep the EXACT same image layout, background, colors, and visual design\n"
+    "3. Match the original font style, size, and positioning as closely as possible\n"
+    "4. Preserve all non-text elements (logos, icons, product photos) unchanged\n"
+    "5. Output the final translated image"
+)
+
+PROMPT_TEMPLATE_NO_OCR = (
     "This is a product image that may contain text. "
     "Generate a new version of this exact image where ALL visible text has been "
     "accurately translated into {target_lang}. Requirements:\n"
@@ -38,6 +48,11 @@ PROMPT_TEMPLATE = (
     "4. Preserve all non-text elements (logos, icons, product photos) unchanged\n"
     "5. Output the final translated image"
 )
+
+SOURCE_LANG_MAP = {
+    "zh": "Chinese", "zh-CN": "Chinese", "zh-TW": "Chinese (Traditional)",
+    "en": "English", "ja": "Japanese", "ko": "Korean",
+}
 
 
 class LovartService:
@@ -133,9 +148,14 @@ class LovartService:
         })
         return result.get("project_id", "")
 
-    @staticmethod
-    def _build_prompt(target_language: str) -> str:
-        return PROMPT_TEMPLATE.format(target_lang=target_language)
+    def _build_prompt(self, target_language: str, source_hint: str = "zh", ocr_texts: list[str] | None = None) -> str:
+        if ocr_texts:
+            source_lang = SOURCE_LANG_MAP.get(source_hint, "the source language")
+            ocr_block = "\n".join(f"- \"{t}\"" for t in ocr_texts)
+            return PROMPT_TEMPLATE_WITH_OCR.format(
+                source_lang=source_lang, target_lang=target_language, ocr_text=ocr_block,
+            )
+        return PROMPT_TEMPLATE_NO_OCR.format(target_lang=target_language)
 
     @staticmethod
     def _extract_image_url(result: dict) -> str | None:
@@ -164,9 +184,15 @@ class LovartService:
                         return url
         return None
 
-    async def translate_image(self, image_url: str, target_language: str) -> str:
+    async def translate_image(
+        self,
+        image_url: str,
+        target_language: str,
+        source_hint: str = "zh",
+        ocr_texts: list[str] | None = None,
+    ) -> str:
         project_id = self._get_or_create_project()
-        prompt = self._build_prompt(target_language)
+        prompt = self._build_prompt(target_language, source_hint, ocr_texts)
 
         chat_body: dict = {
             "prompt": prompt,
@@ -177,7 +203,7 @@ class LovartService:
         thread_id = self._request("POST", f"{self.prefix}/chat", body=chat_body)["thread_id"]
         logger.info("Lovart chat started: thread_id=%s, target=%s", thread_id, target_language)
 
-        for _ in range(100):
+        for _ in range(200):
             await asyncio.sleep(3)
             status_data = self._request("GET", f"{self.prefix}/chat/status", params={"thread_id": thread_id})
             status = status_data.get("status")
@@ -194,4 +220,4 @@ class LovartService:
                 raise ValueError("Lovart done but no image artifact found")
             if status == "abort":
                 raise ValueError("Lovart task aborted")
-        raise TimeoutError("Lovart translation timed out after 5 minutes")
+        raise TimeoutError("Lovart translation timed out after 10 minutes")

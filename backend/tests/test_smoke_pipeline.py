@@ -58,6 +58,7 @@ class TestPipelineMocked:
             patch("backend.routes.translate._update_job_status", side_effect=upd),
             patch("backend.routes.translate._save_translated_image", side_effect=save),
             patch("backend.routes.translate._increment_usage"),
+            patch("backend.routes.translate._run_ocr", return_value=[]),
             patch.dict(os.environ, {
                 "LOVART_ACCESS_KEY": "ak", "LOVART_SECRET_KEY": "sk",
             }),
@@ -84,6 +85,7 @@ class TestPipelineMocked:
             patch("backend.routes.translate._update_job_status", side_effect=upd),
             patch("backend.routes.translate._save_translated_image"),
             patch("backend.routes.translate._increment_usage"),
+            patch("backend.routes.translate._run_ocr", return_value=[]),
             patch.dict(os.environ, {
                 "LOVART_ACCESS_KEY": "ak", "LOVART_SECRET_KEY": "sk",
             }),
@@ -142,16 +144,25 @@ class TestQuotaCheck:
 
 
 class TestLovartPromptBuilding:
-    def test_prompt_contains_target_language(self):
+    def test_prompt_with_ocr_context(self):
         from backend.services.lovart_service import LovartService
-        prompt = LovartService._build_prompt("English")
+        svc = LovartService.__new__(LovartService)
+        prompt = svc._build_prompt("English", "zh", ["高级保湿面霜", "售价128元"])
         assert "English" in prompt
-        assert "translate" in prompt.lower()
+        assert "Chinese" in prompt
+        assert "高级保湿面霜" in prompt
 
-    def test_prompt_different_language(self):
+    def test_prompt_without_ocr(self):
         from backend.services.lovart_service import LovartService
-        prompt = LovartService._build_prompt("Japanese")
+        svc = LovartService.__new__(LovartService)
+        prompt = svc._build_prompt("Japanese", "auto", None)
         assert "Japanese" in prompt
+
+    def test_prompt_empty_ocr_list(self):
+        from backend.services.lovart_service import LovartService
+        svc = LovartService.__new__(LovartService)
+        prompt = svc._build_prompt("Korean", "zh", [])
+        assert "Korean" in prompt
 
 
 class TestLovartImageExtraction:

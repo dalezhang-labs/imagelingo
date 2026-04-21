@@ -273,6 +273,94 @@ for item in result.get("items", []):
 
 ---
 
+## 12. 翻译时报 "Store not authenticated or token expired"
+
+**现象**：点击 Translate 按钮后，job 状态直接变为 `failed`，错误信息 `Store not authenticated or token expired`。
+
+**原因**：Shopline OAuth token 有效期约 10 小时。过期后 `get_token(handle)` 检查 `expires_at <= now()` 返回 `None`，翻译端点返回 401。代码里的 `refresh_token_if_needed()` 实际上没有 refresh 逻辑，只是调了 `get_token()`。
+
+**解决方案**：
+
+1. **后端**：新增 `GET /api/imagelingo/auth/reauth-url` 端点，返回 Shopline OAuth 重新授权的 URL
+2. **前端**：翻译请求返回 401 时，显示红色 banner + "Re-authorize Store" 按钮，引导用户重新走 OAuth
+
+```python
+# backend/routes/auth.py
+@router.get("/reauth-url")
+async def reauth_url(handle: str = ""):
+    if not handle:
+        # Fallback: get the most recent store from DB
+        cur.execute("SELECT handle FROM imagelingo.stores ORDER BY updated_at DESC LIMIT 1")
+        ...
+    auth_url = f"https://{handle}.myshopline.com/admin/oauth-web/#/oauth/authorize?..."
+    return {"auth_url": auth_url, "handle": handle}
+```
+
+**注意**：Shopline 目前不支持 refresh token 自动续期，token 过期后必须重新走 OAuth 授权流程。
+
+---
+
+## 13. Re-authorize 按钮在 Shopline iframe 里点击无反应
+
+**现象**：点击 "Re-authorize Store" 按钮后页面没有任何反应。
+
+**原因**：两个问题叠加：
+1. `window.open(url, "_top")` 在 Shopline 的 iframe 安全策略下被拦截
+2. `storeHandle` 为空时 `handleReauth` 直接 return 了，没有任何提示
+
+**解决方案**：
+- 用 `window.top.location.href = url` 替代 `window.open(url, "_top")`，直接在顶层窗口跳转
+- 加 try/catch fallback 到 `window.location.href`（防止跨域限制）
+
+```typescript
+try { window.top!.location.href = auth_url; } catch { window.location.href = auth_url; }
+```
+
+---
+
+## 14. Re-authorize 跳转到 `https://.myshopline.com/...`（handle 为空）
+
+**现象**：点击 Re-authorize 后跳转到 `https://.myshopline.com/admin/oauth-web/...`，DNS 解析失败。
+
+**原因**：前端在 Vercel 上运行（hostname 是 `web-xxx.vercel.app`），不是 `xxx.myshopline.com`。URL query 参数里也没有 `handle` 或 `shop`，所以 `storeHandle` 始终为空字符串，传给后端后生成了无效的 OAuth URL。
+
+**解决方案**：后端 `reauth-url` 端点不再强制要求前端传 handle，handle 为空时从数据库查最近更新的 store：
+
+```python
+@router.get("/reauth-url")
+async def reauth_url(handle: str = ""):
+    if not handle:
+        cur.execute("SELECT handle FROM imagelingo.stores ORDER BY updated_at DESC LIMIT 1")
+        row = cur.fetchone()
+        if row:
+            handle = row[0]
+    ...
+```
+
+**注意**：这个 fallback 只适用于单 store 场景。如果未来支持多 store，需要在前端通过其他方式（如 Shopline App Bridge SDK）获取当前 store handle。
+
+---
+
+## 15. Railway 部署 healthcheck 失败（`${PORT:-8000}` 未展开）
+
+**现象**：Railway build 成功，但 healthcheck 持续失败，运行时日志报 `Error: Invalid value for '--port': '${PORT:-8000}' is not a valid integer`。
+
+**原因**：`railway.json` 里的 `startCommand` 使用了 bash 变量语法 `${PORT:-8000}`，但 Railway Docker 容器执行 startCommand 时不走 shell，变量不会被展开，直接当成字面字符串传给 uvicorn。
+
+**解决方案**：用 `sh -c` 包裹命令，强制通过 shell 执行：
+
+```json
+{
+  "deploy": {
+    "startCommand": "sh -c 'uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}'"
+  }
+}
+```
+
+**注意**：直接用 `$PORT`（不带默认值）也不行，同样不会被展开。必须用 `sh -c` 包裹。
+
+---
+
 ## 开发环境快速启动
 
 ```bash

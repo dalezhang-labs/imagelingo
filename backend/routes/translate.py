@@ -1,8 +1,6 @@
 """Translation pipeline routes — OCR → Lovart (translate+render) → return image URL."""
 from __future__ import annotations
 
-import base64
-import io
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -239,21 +237,21 @@ async def test_translate_upload(
     except Exception as e:
         logger.warning("OCR failed: %s", e)
 
-    # Convert to base64 data URL for Lovart (since we have bytes, not a public URL)
-    b64 = base64.b64encode(image_bytes).decode()
-    content_type = file.content_type or "image/jpeg"
-    data_url = f"data:{content_type};base64,{b64}"
-
-    # Step 2: Lovart
+    # Upload to Lovart CDN so we have a public URL for the chat API
     lovart = LovartService()
+    filename = file.filename or "upload.jpg"
+    cdn_url = lovart.upload_file(image_bytes, filename)
+
+    # Step 2: Lovart translate
     output_url = await lovart.translate_image(
-        data_url, target_language, source_hint=source_hint, ocr_texts=ocr_texts or None,
+        cdn_url, target_language, source_hint=source_hint, ocr_texts=ocr_texts or None,
     )
 
     return {
-        "filename": file.filename,
+        "filename": filename,
         "target_language": target_language,
         "ocr_texts": ocr_texts,
+        "uploaded_url": cdn_url,
         "translated_image_url": output_url,
     }
 

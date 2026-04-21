@@ -1,11 +1,5 @@
 """Lovart Service — direct Lovart Agent API integration for image translation rendering.
 Uses AK/SK HMAC-SHA256 auth and is aligned to the documented /v1/openapi endpoints.
-
-Prompt optimization notes (2026-04-21):
-- Including OCR-extracted text in the prompt significantly improves translation accuracy
-- Explicit instructions about preserving layout/colors/fonts are critical
-- Specifying "product image" context helps Lovart understand the use case
-- tool_config with include_tools can steer toward image editing vs generation
 """
 from __future__ import annotations
 
@@ -17,6 +11,7 @@ import logging
 import os
 import ssl
 import time
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,8 +26,6 @@ if os.environ.get("LOVART_INSECURE_SSL") == "1":
     _ssl_ctx.check_hostname = False
     _ssl_ctx.verify_mode = ssl.CERT_NONE
 
-# ── Optimized prompt templates for product image translation ──────────
-# V2: includes OCR context for better accuracy
 PROMPT_TEMPLATE_WITH_OCR = (
     "This is a product image containing text in {source_lang}. "
     "The OCR-detected text regions are:\n{ocr_text}\n\n"
@@ -45,7 +38,6 @@ PROMPT_TEMPLATE_WITH_OCR = (
     "5. Output the final translated image"
 )
 
-# V2 fallback: no OCR context available
 PROMPT_TEMPLATE_NO_OCR = (
     "This is a product image containing text. "
     "Generate a new version of this exact image where ALL visible text has been "
@@ -120,6 +112,31 @@ class LovartService:
             raise ValueError(f"Lovart API error: {result.get('message', result)}")
         return result.get("data", result) if isinstance(result, dict) else result
 
+    def upload_file(self, file_bytes: bytes, filename: str = "image.jpg") -> str:
+        """Upload file bytes to Lovart CDN. Returns the CDN URL."""
+        boundary = uuid.uuid4().hex
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n"
+        ).encode() + file_bytes + f"\r\n--{boundary}--\r\n".encode()
+
+        path = f"{self.prefix}/file/upload"
+        headers = self._sign("POST", path)
+        headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
+
+        url = f"{self.base_url}{path}"
+        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=120, context=_ssl_ctx) as resp:
+                result = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            raise ValueError(f"Lovart upload failed ({e.code}): {e.read().decode()[:200]}")
+
+        if result.get("code") != 0:
+            raise ValueError(f"Lovart upload failed: {result.get('message', 'unknown')}")
+        return result["data"]["url"]
+
     def _get_or_create_project(self) -> str:
         result = self._request("POST", f"{self.prefix}/project/save", body={
             "project_id": "",
@@ -143,20 +160,17 @@ class LovartService:
     @staticmethod
     def _extract_image_url(result: dict) -> str | None:
         """Extract image URL from Lovart result, trying multiple field patterns."""
-        # Primary: items[].artifacts[] with type=image
         for item in result.get("items", []):
             for artifact in item.get("artifacts", []):
                 if artifact.get("type") == "image":
                     url = artifact.get("content", "")
                     if url:
                         return url
-        # Fallback: any artifact with a URL-like content
         for item in result.get("items", []):
             for artifact in item.get("artifacts", []):
                 url = artifact.get("url") or artifact.get("content") or artifact.get("data")
                 if url and isinstance(url, str) and url.startswith("http"):
                     return url
-            # Check item-level fields
             for key in ("image_url", "image", "url"):
                 val = item.get(key)
                 if val and isinstance(val, str) and val.startswith("http"):
@@ -198,7 +212,6 @@ class LovartService:
                 url = self._extract_image_url(result)
                 if url:
                     return url
-                # Log structure for debugging without leaking full payload
                 item_types = [
                     {k: type(v).__name__ for k, v in item.items()}
                     for item in result.get("items", [])

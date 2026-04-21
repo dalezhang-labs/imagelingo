@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dale 的 AI 助手架构 — 三体协作系统</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card-hover: #222633;
+    --border: #2a2e3d;
+    --text: #e4e4e7;
+    --text-dim: #9ca3af;
+    --accent-blue: #60a5fa;
+    --accent-purple: #a78bfa;
+    --accent-green: #34d399;
+    --accent-orange: #fb923c;
+    --accent-red: #f87171;
+    --accent-cyan: #22d3ee;
+    --accent-yellow: #fbbf24;
+    --gradient-hermes: linear-gradient(135deg, #6366f1, #8b5cf6);
+    --gradient-openclaw: linear-gradient(135deg, #f59e0b, #f97316);
+    --gradient-kiro: linear-gradient(135deg, #06b6d4, #3b82f6);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    padding: 80px 20px 60px;
+    background: linear-gradient(180deg, #1a1040 0%, var(--bg) 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(99,102,241,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 50%, rgba(6,182,212,0.06) 0%, transparent 50%);
+    animation: drift 20s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0%, 100% { transform: translate(0, 0); }
+    50% { transform: translate(-2%, 1%); }
+  }
+  .hero h1 {
+    font-size: 2.8em;
+    font-weight: 800;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    position: relative;
+    margin-bottom: 16px;
+  }
+  .hero .subtitle {
+    font-size: 1.2em;
+    color: var(--text-dim);
+    position: relative;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  .hero .badge-row {
+    margin-top: 24px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+  .badge.mac { border-color: #4b5563; }
+  .badge.azure { border-color: #3b82f6; color: #60a5fa; }
+  .badge.tg { border-color: #0ea5e9; color: #38bdf8; }
+
+  /* Container */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Section */
+  .section {
+    margin-bottom: 64px;
+  }
+  .section-title {
+    font-size: 1.8em;
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-title .icon {
+    font-size: 1.1em;
+  }
+  .section-desc {
+    color: var(--text-dim);
+    font-size: 1.05em;
+    margin-bottom: 32px;
+    max-width: 800px;
+  }
+
+  /* Agent Cards */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .agent-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .agent-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .agent-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+  }
+  .agent-card.hermes::before { background: var(--gradient-hermes); }
+  .agent-card.openclaw::before { background: var(--gradient-openclaw); }
+  .agent-card.kiro::before { background: var(--gradient-kiro); }
+
+  .agent-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .agent-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8em;
+    flex-shrink: 0;
+  }
+  .hermes .agent-avatar { background: var(--gradient-hermes); }
+  .openclaw .agent-avatar { background: var(--gradient-openclaw); }
+  .kiro .agent-avatar { background: var(--gradient-kiro); }
+
+  .agent-name {
+    font-size: 1.4em;
+    font-weight: 700;
+  }
+  .agent-role {
+    font-size: 0.85em;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .agent-model {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 0.8em;
+    font-weight: 600;
+    margin-bottom: 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+  }
+  .model-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .hermes .model-dot { background: #818cf8; }
+  .openclaw .model-dot { background: #fb923c; }
+  .kiro .model-dot { background: #22d3ee; }
+
+  .agent-desc {
+    color: var(--text-dim);
+    font-size: 0.95em;
+    margin-bottom: 20px;
+    line-height: 1.8;
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .tag {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.78em;
+    font-weight: 500;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .hermes .tag { border-color: rgba(129,140,248,0.3); color: #a5b4fc; }
+  .openclaw .tag { border-color: rgba(251,146,60,0.3); color: #fdba74; }
+  .kiro .tag { border-color: rgba(34,211,238,0.3); color: #67e8f9; }
+
+  .cost-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.82em;
+    color: var(--text-dim);
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .cost-dots {
+    display: flex;
+    gap: 4px;
+  }
+  .cost-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+  .cost-dot.filled { background: var(--accent-yellow); }
+
+  /* Architecture Diagram */
+  .arch-diagram {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 40px;
+    margin-bottom: 32px;
+    overflow-x: auto;
+  }
+  .arch-svg {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    display: block;
+  }
+
+  /* Flow */
+  .flow-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 20px 0;
+    position: relative;
+  }
+  .flow-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: 23px;
+    top: 56px;
+    bottom: -4px;
+    width: 2px;
+    background: var(--border);
+  }
+  .flow-num {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.1em;
+    flex-shrink: 0;
+    background: var(--card);
+    border: 2px solid var(--border);
+    position: relative;
+    z-index: 1;
+  }
+  .flow-content h4 {
+    font-size: 1.05em;
+    margin-bottom: 4px;
+  }
+  .flow-content p {
+    color: var(--text-dim);
+    font-size: 0.92em;
+  }
+
+  /* Decision Tree */
+  .decision-tree {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .decision-row {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    transition: background 0.2s;
+  }
+  .decision-row:hover { background: var(--card-hover); }
+  .decision-task {
+    font-weight: 500;
+  }
+  .decision-arrow {
+    color: var(--text-dim);
+    font-size: 1.2em;
+  }
+  .decision-agent {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9em;
+    justify-self: start;
+  }
+  .decision-agent.hermes { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+  .decision-agent.openclaw { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .decision-agent.kiro { background: rgba(6,182,212,0.15); color: #22d3ee; }
+
+  /* Memory Architecture */
+  .memory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .memory-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .memory-card h4 {
+    font-size: 1em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .memory-card p {
+    color: var(--text-dim);
+    font-size: 0.9em;
+  }
+  .shared-badge {
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(52,211,153,0.15);
+    color: var(--accent-green);
+    font-weight: 600;
+  }
+  .private-badge {
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(248,113,113,0.15);
+    color: var(--accent-red);
+    font-weight: 600;
+  }
+
+  /* Skills */
+  .skills-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+  }
+  .skills-block {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .skills-block h4 {
+    font-size: 1.05em;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .skill-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .skill-item {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.8em;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+  .skill-item.highlight {
+    border-color: rgba(99,102,241,0.4);
+    color: #a5b4fc;
+    background: rgba(99,102,241,0.08);
+  }
+
+  /* Security */
+  .security-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .security-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .security-card h4 {
+    font-size: 0.95em;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .security-card ul {
+    list-style: none;
+    font-size: 0.88em;
+    color: var(--text-dim);
+  }
+  .security-card li {
+    padding: 3px 0;
+    padding-left: 16px;
+    position: relative;
+  }
+  .security-card li::before {
+    content: '•';
+    position: absolute;
+    left: 0;
+    color: var(--text-dim);
+  }
+  .security-card.green { border-color: rgba(52,211,153,0.3); }
+  .security-card.green h4 { color: var(--accent-green); }
+  .security-card.yellow { border-color: rgba(251,191,36,0.3); }
+  .security-card.yellow h4 { color: var(--accent-yellow); }
+  .security-card.red { border-color: rgba(248,113,113,0.3); }
+  .security-card.red h4 { color: var(--accent-red); }
+  .security-card.black { border-color: rgba(248,113,113,0.5); }
+  .security-card.black h4 { color: var(--accent-red); }
+
+  /* Heartbeat */
+  .heartbeat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .heartbeat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .heartbeat-card h4 {
+    font-size: 1em;
+    margin-bottom: 6px;
+  }
+  .heartbeat-card .time {
+    font-size: 0.82em;
+    color: var(--accent-cyan);
+    margin-bottom: 10px;
+  }
+  .heartbeat-card p {
+    color: var(--text-dim);
+    font-size: 0.9em;
+  }
+
+  /* Infra */
+  .infra-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .infra-table th {
+    text-align: left;
+    padding: 14px 20px;
+    background: rgba(255,255,255,0.03);
+    font-weight: 600;
+    font-size: 0.85em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .infra-table td {
+    padding: 12px 20px;
+    font-size: 0.92em;
+    border-bottom: 1px solid var(--border);
+  }
+  .infra-table tr:last-child td { border-bottom: none; }
+  .infra-table code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.88em;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--accent-cyan);
+  }
+
+  /* Dispatch */
+  .dispatch-block {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 16px;
+  }
+  .dispatch-block h4 {
+    font-size: 1.05em;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dispatch-block .cmd {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.85em;
+    color: #c9d1d9;
+    overflow-x: auto;
+    line-height: 1.6;
+    margin-bottom: 12px;
+  }
+  .dispatch-block .note {
+    color: var(--text-dim);
+    font-size: 0.88em;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--text-dim);
+    font-size: 0.85em;
+    border-top: 1px solid var(--border);
+    margin-top: 40px;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero h1 { font-size: 2em; }
+    .agent-grid { grid-template-columns: 1fr; }
+    .decision-row { grid-template-columns: 1fr; gap: 8px; }
+    .decision-arrow { display: none; }
+    .container { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== HERO ==================== -->
+<div class="hero">
+  <h1>🧠 Dale 的 AI 助手架构</h1>
+  <p class="subtitle">
+    三个 AI 助手协同工作的个人生产力系统——小何负责思考，小克负责跑腿，Kiro 负责写代码。
+    <br>一个人 + 三个 AI = 一支完整的团队。
+  </p>
+  <div class="badge-row">
+    <span class="badge mac">🍎 MacBook Pro M4 Pro · 24GB</span>
+    <span class="badge azure">☁️ Azure AI Foundry</span>
+    <span class="badge tg">✈️ Telegram 通知</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ==================== 核心理念 ==================== -->
+<div class="section" style="margin-top: 64px;">
+  <h2 class="section-title"><span class="icon">💡</span> 核心理念</h2>
+  <p class="section-desc">
+    这套系统的设计哲学很简单：<strong>不同的任务用不同成本的模型</strong>。日常对话用中等模型，搜索调研用便宜模型，编程开发用最强模型。
+    三个助手各司其职，通过共享记忆文件保持信息同步，通过 CLI 命令互相派活。
+    整个系统运行在一台 MacBook 上，所有 AI 推理走 Azure 云端，不在本地跑模型。
+  </p>
+</div>
+
+<!-- ==================== 三个助手 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">👥</span> 三个助手</h2>
+  <p class="section-desc">每个助手有明确的定位、专属的模型、独立的技能库。</p>
+
+  <div class="agent-grid">
+    <!-- 小何 -->
+    <div class="agent-card hermes">
+      <div class="agent-header">
+        <div class="agent-avatar">🧠</div>
+        <div>
+          <div class="agent-name">小何 · Hermes</div>
+          <div class="agent-role">高级个人助理 / 项目经理</div>
+        </div>
+      </div>
+      <div class="agent-model"><span class="model-dot"></span> Claude Sonnet 4.6 · Azure Anthropic</div>
+      <p class="agent-desc">
+        Dale 的日常主力对话入口。负责理解需求、分析问题、规划方案、协调其他两个助手。
+        像一个项目经理——自己不写代码，不做搜索苦力，而是把任务拆解后分配给最合适的执行者。
+        通过 Telegram 与 Dale 实时沟通。
+      </p>
+      <div class="tag-list">
+        <span class="tag">日常对话</span>
+        <span class="tag">任务规划</span>
+        <span class="tag">决策分析</span>
+        <span class="tag">协调派活</span>
+        <span class="tag">进度跟踪</span>
+        <span class="tag">每日简报</span>
+        <span class="tag">每周复盘</span>
+      </div>
+      <div class="cost-bar">
+        <span>Token 成本：</span>
+        <div class="cost-dots">
+          <span class="cost-dot filled"></span>
+          <span class="cost-dot filled"></span>
+          <span class="cost-dot"></span>
+        </div>
+        <span>中等</span>
+      </div>
+    </div>
+
+    <!-- 小克 -->
+    <div class="agent-card openclaw">
+      <div class="agent-header">
+        <div class="agent-avatar">🦞</div>
+        <div>
+          <div class="agent-name">小克 · OpenClaw</div>
+          <div class="agent-role">初级助理 / 搜索执行者</div>
+        </div>
+      </div>
+      <div class="agent-model"><span class="model-dot"></span> GPT-5.4 Mini · Azure OpenAI</div>
+      <p class="agent-desc">
+        专门处理不需要深度推理的执行任务。搜索新闻、收集资料、翻译文档、格式转换——
+        这些任务消耗大量 token 但不需要聪明的模型，用最便宜的模型跑最划算。
+        有自己的 Gateway 服务常驻后台，通过 Telegram Bot 自动回报结果。
+      </p>
+      <div class="tag-list">
+        <span class="tag">搜索调研</span>
+        <span class="tag">新闻摘要</span>
+        <span class="tag">资料收集</span>
+        <span class="tag">翻译</span>
+        <span class="tag">格式转换</span>
+        <span class="tag">邮件检查</span>
+        <span class="tag">文件操作</span>
+      </div>
+      <div class="cost-bar">
+        <span>Token 成本：</span>
+        <div class="cost-dots">
+          <span class="cost-dot filled"></span>
+          <span class="cost-dot"></span>
+          <span class="cost-dot"></span>
+        </div>
+        <span>最低</span>
+      </div>
+    </div>
+
+    <!-- Kiro -->
+    <div class="agent-card kiro">
+      <div class="agent-header">
+        <div class="agent-avatar">⚡</div>
+        <div>
+          <div class="agent-name">Kiro CLI</div>
+          <div class="agent-role">高级工程师 / 编程专家</div>
+        </div>
+      </div>
+      <div class="agent-model"><span class="model-dot"></span> Claude Opus 4.6 · 最强模型 · Token 充裕</div>
+      <p class="agent-desc">
+        专门处理编程开发和复杂工程问题。使用当前最强的 Claude Opus 4.6 模型，
+        擅长深度推理、多文件代码理解、复杂 bug 追踪。Token 额度充裕，不用省着用。
+        配备了两个专用 Agent Profile：短任务用 hermes-task，长项目用 hermes-dev。
+        集成 GitHub、Neon 数据库等开发工具链。
+      </p>
+      <div class="tag-list">
+        <span class="tag">编程开发</span>
+        <span class="tag">Bug 修复</span>
+        <span class="tag">代码审查</span>
+        <span class="tag">架构设计</span>
+        <span class="tag">多文件重构</span>
+        <span class="tag">工程排查</span>
+        <span class="tag">GitHub 集成</span>
+      </div>
+      <div class="cost-bar">
+        <span>Token 成本：</span>
+        <div class="cost-dots">
+          <span class="cost-dot filled"></span>
+          <span class="cost-dot filled"></span>
+          <span class="cost-dot filled"></span>
+        </div>
+        <span>最高（但额度充裕，不用省）</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 任务分配决策树 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🌳</span> 任务分配决策树</h2>
+  <p class="section-desc">Dale 说一句话，小何自动判断该谁来做。核心逻辑：按任务类型匹配最合适的模型。</p>
+
+  <div class="decision-tree">
+    <div class="decision-row">
+      <span class="decision-task">💬 日常对话、闲聊、问答</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent hermes">🧠 小何自己处理</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">📋 任务规划、项目决策、优先级排序</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent hermes">🧠 小何自己处理</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">🔍 搜索调研、新闻摘要、资料收集</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent openclaw">🦞 派给小克（token 便宜）</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">📝 大量文本处理、翻译、格式转换</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent openclaw">🦞 派给小克（token 便宜）</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">💻 编程开发、写代码、加功能</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent kiro">⚡ 派给 Kiro（最强模型）</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">🐛 复杂 Bug 修复、工程问题排查</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent kiro">⚡ 派给 Kiro（最强模型）</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">🏗️ 架构设计、代码审查、多文件重构</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent kiro">⚡ 派给 Kiro（最强模型）</span>
+    </div>
+    <div class="decision-row">
+      <span class="decision-task">⚡ 并行任务（调研 + 开发同时进行）</span>
+      <span class="decision-arrow">→</span>
+      <span class="decision-agent hermes">🧠 小何协调：小克调研 + Kiro 开发</span>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 派活机制 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">📡</span> 派活机制</h2>
+  <p class="section-desc">
+    小何通过 CLI 命令向小克和 Kiro 派活，全部采用 Fire-and-Forget 模式——派出去就不管了，
+    不阻塞小何的对话。执行者完成后自动通知 Dale。
+  </p>
+
+  <div class="dispatch-block">
+    <h4>🦞 小何 → 小克（搜索/调研任务）</h4>
+    <div class="cmd">
+<span style="color:#8b949e"># 后台派活，不等待结果</span><br>
+nohup openclaw agent --agent main \<br>
+&nbsp;&nbsp;-m "搜索最近一周 AI Agent 领域的重要新闻，整理成中文摘要。完成后通过 Telegram 告知 Dale。" \<br>
+&nbsp;&nbsp;--deliver --reply-channel telegram \<br>
+&nbsp;&nbsp;&gt; /tmp/openclaw-dispatch.log 2&gt;&amp;1 &amp;
+    </div>
+    <p class="note">
+      📌 小克完成后自动通过 Telegram Bot 把结果发给 Dale。小何不需要轮询。
+    </p>
+  </div>
+
+  <div class="dispatch-block">
+    <h4>⚡ 小何 → Kiro（短任务：Bug 修复、调查）</h4>
+    <div class="cmd">
+<span style="color:#8b949e"># hermes-task：聚焦的短任务</span><br>
+nohup kiro-cli chat --agent hermes-task \<br>
+&nbsp;&nbsp;--trust-all-tools --no-interactive \<br>
+&nbsp;&nbsp;"在 ~/Projects/imagelingo 项目中，backend/services/ocr_service.py<br>
+&nbsp;&nbsp;&nbsp;OCR 识别中文返回乱码。错误日志：[粘贴]。请排查根因并修复。" \<br>
+&nbsp;&nbsp;&gt; /tmp/kiro-task-$(date +%s).log 2&gt;&amp;1 &amp;
+    </div>
+    <p class="note">
+      📌 Kiro 完成后在日志末尾输出结构化报告（HERMES-REPORT），小何只需读报告摘要。
+    </p>
+  </div>
+
+  <div class="dispatch-block">
+    <h4>⚡ 小何 → Kiro（长项目：完整功能开发）</h4>
+    <div class="cmd">
+<span style="color:#8b949e"># hermes-dev：多阶段长项目</span><br>
+nohup kiro-cli chat --agent hermes-dev \<br>
+&nbsp;&nbsp;--trust-all-tools --no-interactive \<br>
+&nbsp;&nbsp;"在 ~/Projects/toolmatrix/imagelingo 项目中，按照 PLAN.md 实现<br>
+&nbsp;&nbsp;&nbsp;Phase 2：添加批量翻译功能。验收标准：支持 CSV 批量导入，<br>
+&nbsp;&nbsp;&nbsp;翻译结果可导出，pytest 全部通过。" \<br>
+&nbsp;&nbsp;&gt; /tmp/kiro-dev-$(date +%s).log 2&gt;&amp;1 &amp;
+    </div>
+    <p class="note">
+      📌 hermes-dev 使用 Claude Opus 4.6，适合需要长时间运行的完整功能开发。Dale 可以在 Kiro IDE 中实时看到执行过程。
+    </p>
+  </div>
+</div>
+
+<!-- ==================== 共享记忆架构 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🗂️</span> 共享记忆架构</h2>
+  <p class="section-desc">
+    三个助手通过文件系统共享记忆。核心文件放在 <code style="background:rgba(255,255,255,0.06);padding:2px 8px;border-radius:4px;font-size:0.9em;">~/.shared-ai-memory/</code> 目录，
+    小何和小克通过符号链接（symlink）指向同一份文件。SOUL.md 是唯一不共享的——每个助手有自己的人格。
+  </p>
+
+  <div class="memory-grid">
+    <div class="memory-card">
+      <h4>📄 USER.md <span class="shared-badge">共享</span></h4>
+      <p>关于 Dale 的个人信息——基本资料、工作背景、作息习惯、关键人物、强项弱项。所有助手共同遵守，确保一致的用户理解。</p>
+    </div>
+    <div class="memory-card">
+      <h4>📄 MEMORY.md <span class="shared-badge">共享</span></h4>
+      <p>跨会话的长期记忆——环境配置、工具信息、任务分配规则、协作约定。任何一方更新都会反映到另一方。</p>
+    </div>
+    <div class="memory-card">
+      <h4>📄 ACCESS_POLICY.md <span class="shared-badge">共享</span></h4>
+      <p>访问控制策略——谁有权限、什么操作需要确认、什么操作绝对不做。定义了可信代理机制（小何派活 = Dale 授权）。</p>
+    </div>
+    <div class="memory-card">
+      <h4>📄 HEARTBEAT.md <span class="shared-badge">共享</span></h4>
+      <p>运转节奏配置——每日简报时间、每周复盘内容、事件触发规则、安静时段。控制助手的主动行为频率。</p>
+    </div>
+    <div class="memory-card">
+      <h4>📄 SOUL.md（小何版） <span class="private-badge">独立</span></h4>
+      <p>小何的人格与使命——项目经理定位、不写代码的硬规则、强制决策 checkpoint、沟通风格。存放在 <code style="font-size:0.85em;">~/.hermes/SOUL.md</code></p>
+    </div>
+    <div class="memory-card">
+      <h4>📄 SOUL.md（小克版） <span class="private-badge">独立</span></h4>
+      <p>小克的人格——执行者定位、不要过度思考、直接清晰不啰嗦、可信代理条款。存放在 <code style="font-size:0.85em;">~/.openclaw/workspace/SOUL.md</code></p>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;padding:20px;background:var(--card);border:1px solid rgba(248,113,113,0.3);border-radius:12px;">
+    <p style="color:var(--accent-red);font-weight:600;margin-bottom:8px;">⚠️ 历史教训：SOUL.md 绝不共享</p>
+    <p style="color:var(--text-dim);font-size:0.9em;">
+      2026-04-19 曾因自动化脚本（gbrain soul-audit）把小克的 SOUL 覆盖成小何的版本，
+      导致小克丢失"执行助手"人设，开始拒绝 CLI 派活。修复后确立规则：SOUL 是人格文件，各管各，永远不共享。
+    </p>
+  </div>
+</div>
+
+<!-- ==================== 技能库 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🧩</span> 技能库（Skills）</h2>
+  <p class="section-desc">
+    每个助手有自己的技能库，技能以 Markdown 文件描述，包含触发条件和执行指南。
+    小何有 60+ 个技能（含 gbrain 系列），小克有 18 个技能。
+  </p>
+
+  <div class="skills-section">
+    <div class="skills-block">
+      <h4>🧠 小何的关键技能（60+）</h4>
+      <ul class="skill-list">
+        <li class="skill-item highlight">dispatch-to-openclaw</li>
+        <li class="skill-item highlight">dispatch-to-kiro</li>
+        <li class="skill-item">gbrain-briefing</li>
+        <li class="skill-item">gbrain-soul-audit</li>
+        <li class="skill-item">gbrain-daily-task-manager</li>
+        <li class="skill-item">gbrain-cron-scheduler</li>
+        <li class="skill-item">gbrain-signal-detector</li>
+        <li class="skill-item">gbrain-idea-ingest</li>
+        <li class="skill-item">gbrain-data-research</li>
+        <li class="skill-item">email</li>
+        <li class="skill-item">github</li>
+        <li class="skill-item">research</li>
+        <li class="skill-item">social-media</li>
+        <li class="skill-item">software-development</li>
+        <li class="skill-item">creative</li>
+        <li class="skill-item">media</li>
+        <li class="skill-item">mcp</li>
+        <li class="skill-item">productivity</li>
+        <li class="skill-item">note-taking</li>
+        <li class="skill-item">smart-home</li>
+      </ul>
+    </div>
+    <div class="skills-block">
+      <h4>🦞 小克的技能（18）</h4>
+      <ul class="skill-list">
+        <li class="skill-item">tavily-tool</li>
+        <li class="skill-item">brave-search</li>
+        <li class="skill-item">agent-browser</li>
+        <li class="skill-item">summarize</li>
+        <li class="skill-item">obsidian</li>
+        <li class="skill-item">gog (Gmail/Drive)</li>
+        <li class="skill-item">lovart-api</li>
+        <li class="skill-item">github</li>
+        <li class="skill-item">failsafe-secureclaw</li>
+        <li class="skill-item">auto-updater-skill</li>
+        <li class="skill-item">self-improving-agent</li>
+        <li class="skill-item">proactive-agent</li>
+        <li class="skill-item">ai-builder-digest</li>
+        <li class="skill-item">airadar</li>
+        <li class="skill-item">find-skills</li>
+        <li class="skill-item">skill-vetter</li>
+        <li class="skill-item">obsidian-ontology-sync</li>
+        <li class="skill-item">last30days</li>
+      </ul>
+    </div>
+    <div class="skills-block">
+      <h4>⚡ Kiro CLI 的 Agent Profiles</h4>
+      <ul class="skill-list">
+        <li class="skill-item highlight">hermes-task（短任务）</li>
+        <li class="skill-item highlight">hermes-dev（长项目）</li>
+        <li class="skill-item highlight">hermes-delegate（通用委托）</li>
+        <li class="skill-item">GitHub MCP 集成</li>
+        <li class="skill-item">Neon 数据库 MCP</li>
+        <li class="skill-item">文件读写</li>
+        <li class="skill-item">Shell 执行</li>
+        <li class="skill-item">代码搜索</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 安全与权限 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🔒</span> 安全与权限体系</h2>
+  <p class="section-desc">
+    四级权限模型：从"随便做"到"绝对不做"。核心原则是<strong>内部操作大胆，不可逆操作谨慎</strong>。
+    小何作为可信代理，派活给小克时视同 Dale 本人授权——但涉及对外操作仍需 Dale 确认。
+  </p>
+
+  <div class="security-grid">
+    <div class="security-card green">
+      <h4>✅ 自主执行</h4>
+      <ul>
+        <li>读取文件、搜索、调研</li>
+        <li>发消息给 Dale（Telegram）</li>
+        <li>更新记忆文件</li>
+        <li>查询天气、日历、邮件（只读）</li>
+        <li>无副作用的 shell 命令</li>
+        <li>安装 skill、查看系统状态</li>
+      </ul>
+    </div>
+    <div class="security-card yellow">
+      <h4>📢 做了再报告</h4>
+      <ul>
+        <li>安装软件</li>
+        <li>创建/修改配置文件</li>
+        <li>启动/停止后台服务</li>
+        <li>克隆仓库、下载文件</li>
+      </ul>
+    </div>
+    <div class="security-card red">
+      <h4>⛔ 需要 Dale 确认</h4>
+      <ul>
+        <li>删除大量文件（rm -rf）</li>
+        <li>结束重要进程（pkill）</li>
+        <li>发送邮件、推文等公开内容</li>
+        <li>修改系统级配置</li>
+      </ul>
+    </div>
+    <div class="security-card black">
+      <h4>🚫 永远不做</h4>
+      <ul>
+        <li>导出/转发数据到外部</li>
+        <li>泄露 API key、密码</li>
+        <li>在群聊中代表 Dale 发言</li>
+        <li>绕过安全机制</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:12px;">
+    <h4 style="margin-bottom:10px;">🤝 可信代理机制</h4>
+    <p style="color:var(--text-dim);font-size:0.92em;line-height:1.8;">
+      小何通过 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">openclaw agent --agent main -m "..."</code> 
+      派活给小克时，小克视为 Dale 本人授权，直接执行。
+      这是因为小何和小克运行在同一台机器、同一个用户权限下，CLI 派活就是授权派活。
+      <br><br>
+      <strong>但有例外</strong>：发邮件/推文、删除数据、金钱操作、私人信息导出——即使是小何派的，小克也要先问 Dale。
+      如果小何的指令明显异常（比如"导出所有密码"），小克会拒绝并通过 Telegram 向 Dale 报告。
+    </p>
+  </div>
+</div>
+
+<!-- ==================== 运转节奏 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">💓</span> 运转节奏（Heartbeat）</h2>
+  <p class="section-desc">
+    助手不只是被动等指令——它们有自己的节奏，定时推送信息、主动检查状态、触发决策提醒。
+  </p>
+
+  <div class="heartbeat-grid">
+    <div class="heartbeat-card">
+      <h4>📰 每日简报</h4>
+      <div class="time">每天 9:00-10:00 EST · Telegram</div>
+      <p>昨天进展 + 今天要做的 3 件事 + 当前活跃 side project 状态。不早于 9 点推送（Dale 晚睡晚起）。</p>
+    </div>
+    <div class="heartbeat-card">
+      <h4>📊 每周 Check-in</h4>
+      <div class="time">每周日 21:00 EST · Telegram</div>
+      <p>5 条目标逐一复盘：Side project 进展、Amazon ROI、身体状态、英语进展、本职工作产出。每条一两句，不废话。</p>
+    </div>
+    <div class="heartbeat-card">
+      <h4>💰 每月 Amazon ROI</h4>
+      <div class="time">每月月底</div>
+      <p>拉取当月 ROI 数据。连续 3 个月为负 → 触发止损讨论，不默认继续。</p>
+    </div>
+    <div class="heartbeat-card">
+      <h4>🚨 强制决策 Checkpoint</h4>
+      <div class="time">事件触发 · 不可绕过</div>
+      <p>
+        项目上线 2 周 → "有人用吗？"<br>
+        项目上线 4 周 → "继续还是停？"（不接受模糊答案）<br>
+        活跃项目 ≥ 3 → 拦截新想法<br>
+        连续 2 天只改工具链 → 提醒 yak-shaving
+      </p>
+    </div>
+    <div class="heartbeat-card">
+      <h4>🌙 安静时段</h4>
+      <div class="time">23:00 — 09:00 EST</div>
+      <p>深夜不主动打扰。出差期间（德州/加州）全部静音，只保留紧急系统故障通知。</p>
+    </div>
+    <div class="heartbeat-card">
+      <h4>🔧 后台自主工作</h4>
+      <div class="time">随时 · 无需打招呼</div>
+      <p>整理记忆文件、检查更新 skill、健康巡检（磁盘、服务状态）。轻量优先，有价值再说话。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 基础设施 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🏗️</span> 基础设施</h2>
+  <p class="section-desc">所有组件运行在一台 MacBook Pro 上，AI 推理全部走 Azure 云端。</p>
+
+  <table class="infra-table">
+    <thead>
+      <tr>
+        <th>组件</th>
+        <th>技术栈</th>
+        <th>说明</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>硬件</strong></td>
+        <td>MacBook Pro M4 Pro · 24GB RAM</td>
+        <td>所有助手运行在本地，不需要服务器</td>
+      </tr>
+      <tr>
+        <td><strong>小何 (Hermes)</strong></td>
+        <td>Python · <code>~/.hermes/</code></td>
+        <td>Hermes Agent v0.10.0，60+ skills，Telegram 集成</td>
+      </tr>
+      <tr>
+        <td><strong>小克 (OpenClaw)</strong></td>
+        <td>Node.js · <code>~/.openclaw/</code></td>
+        <td>OpenClaw 2026.4.15，Gateway 常驻 <code>127.0.0.1:18789</code></td>
+      </tr>
+      <tr>
+        <td><strong>Kiro CLI</strong></td>
+        <td>Rust · <code>~/.kiro/</code></td>
+        <td>Kiro IDE 的 CLI 版本，3 个 Agent Profile</td>
+      </tr>
+      <tr>
+        <td><strong>AI 推理</strong></td>
+        <td>Azure AI Foundry</td>
+        <td>Anthropic 端点（Claude）+ OpenAI 端点（GPT），统一 API Key</td>
+      </tr>
+      <tr>
+        <td><strong>通知渠道</strong></td>
+        <td>Telegram Bot</td>
+        <td>小克的 Bot: <code>@dalesopenclawb_bot</code>，小何也通过 Telegram 对话</td>
+      </tr>
+      <tr>
+        <td><strong>共享记忆</strong></td>
+        <td>文件系统 symlink</td>
+        <td><code>~/.shared-ai-memory/</code> → 小何和小克各自 symlink 过来</td>
+      </tr>
+      <tr>
+        <td><strong>开发工具</strong></td>
+        <td>GitHub + Neon DB</td>
+        <td>通过 MCP 协议集成到 Kiro CLI，支持 PR、SQL、分支管理</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ==================== 沟通风格对比 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🎭</span> 沟通风格对比</h2>
+  <p class="section-desc">每个助手有不同的沟通风格，匹配各自的角色定位。</p>
+
+  <div class="agent-grid">
+    <div class="agent-card hermes" style="padding:24px;">
+      <h4 style="margin-bottom:12px;">🧠 小何的风格</h4>
+      <ul style="list-style:none;font-size:0.92em;color:var(--text-dim);">
+        <li style="padding:4px 0;">• <strong>直接</strong>：给结论，再给理由，不绕弯子</li>
+        <li style="padding:4px 0;">• <strong>务实</strong>：优先可以立刻执行的方案</li>
+        <li style="padding:4px 0;">• <strong>简洁</strong>：一句话能说清就不说两句</li>
+        <li style="padding:4px 0;">• <strong>有观察</strong>：能看到隐含风险和盲区，主动说一次</li>
+        <li style="padding:4px 0;">• <strong>主动起草</strong>：Dale 讨厌写文案，小何主动帮写</li>
+      </ul>
+    </div>
+    <div class="agent-card openclaw" style="padding:24px;">
+      <h4 style="margin-bottom:12px;">🦞 小克的风格</h4>
+      <ul style="list-style:none;font-size:0.92em;color:var(--text-dim);">
+        <li style="padding:4px 0;">• <strong>不过度思考</strong>：拿到任务就做，不分析"为什么"</li>
+        <li style="padding:4px 0;">• <strong>不啰嗦</strong>：不寒暄、不重复、不预告、不总结</li>
+        <li style="padding:4px 0;">• <strong>给要点</strong>：搜索结果只给关键信息，不大段粘贴</li>
+        <li style="padding:4px 0;">• <strong>做完再说</strong>：不列举"打算做什么"，直接给结果</li>
+        <li style="padding:4px 0;">• <strong>示范</strong>：❌ "好的，让我搜索一下..." ✅ "Node.js LTS: v22.15.0"</li>
+      </ul>
+    </div>
+    <div class="agent-card kiro" style="padding:24px;">
+      <h4 style="margin-bottom:12px;">⚡ Kiro 的风格</h4>
+      <ul style="list-style:none;font-size:0.92em;color:var(--text-dim);">
+        <li style="padding:4px 0;">• <strong>结构化报告</strong>：完成后输出 HERMES-REPORT 格式</li>
+        <li style="padding:4px 0;">• <strong>自主执行</strong>：不问用户，遇到问题报 BLOCKER</li>
+        <li style="padding:4px 0;">• <strong>验证驱动</strong>：改完代码跑测试，确认通过再报告</li>
+        <li style="padding:4px 0;">• <strong>安全优先</strong>：不碰系统文件，不推 main 分支</li>
+        <li style="padding:4px 0;">• <strong>最小改动</strong>：只改必要的，不额外重构</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 一句话总结 ==================== -->
+<div class="section" style="text-align:center;padding:48px 0;">
+  <div style="max-width:700px;margin:0 auto;padding:40px;background:var(--card);border:1px solid var(--border);border-radius:16px;">
+    <h2 style="font-size:1.6em;margin-bottom:16px;background:linear-gradient(135deg,#60a5fa,#a78bfa,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+      一个人 + 三个 AI = 一支完整的团队
+    </h2>
+    <p style="color:var(--text-dim);font-size:1.05em;line-height:1.8;">
+      小何是大脑，负责思考和决策；<br>
+      小克是双手，负责搜索和执行；<br>
+      Kiro 是工程师，负责写代码和解决技术问题。<br><br>
+      三者通过共享记忆保持同步，通过 CLI 命令互相协作，<br>
+      通过 Telegram 统一向 Dale 汇报。<br><br>
+      <strong style="color:var(--text);">不同的任务，不同的模型，不同的成本。<br>这就是这套系统的全部逻辑。</strong>
+    </p>
+  </div>
+</div>
+
+<!-- ==================== 故障排查记录 ==================== -->
+<div class="section">
+  <h2 class="section-title"><span class="icon">🔧</span> 故障排查记录</h2>
+  <p class="section-desc">搭建过程中遇到的关键问题和修复方案，留作参考。</p>
+
+  <!-- 故障 1：小何 Azure Anthropic 直连 404 -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;margin-bottom:24px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <span style="background:rgba(248,113,113,0.15);color:var(--accent-red);padding:4px 12px;border-radius:6px;font-size:0.82em;font-weight:600;">2026-04-20</span>
+      <h3 style="font-size:1.15em;">小何（Hermes）无法连接 Azure AI Foundry Anthropic 端点 — HTTP 404</h3>
+    </div>
+
+    <h4 style="color:var(--accent-orange);margin-bottom:10px;font-size:0.95em;">📋 症状</h4>
+    <p style="color:var(--text-dim);font-size:0.92em;margin-bottom:20px;line-height:1.8;">
+      小何通过 Telegram 和 CLI 均无法响应，所有请求返回 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;color:var(--accent-red);">HTTP 404 - Resource not found</code>。
+      日志显示 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">Non-retryable client error</code>，Provider 显示为 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">custom</code> 而非 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">azure-anthropic</code>。
+      但用 Python SDK（<code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">AnthropicFoundry</code>）直接调用同一个端点和 API Key 完全正常。
+    </p>
+
+    <h4 style="color:var(--accent-orange);margin-bottom:10px;font-size:0.95em;">🔍 排查过程</h4>
+    <div style="color:var(--text-dim);font-size:0.92em;margin-bottom:20px;line-height:1.8;">
+      <p style="margin-bottom:8px;">1. <strong>验证 API Key 和端点</strong> — 用 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">AnthropicFoundry</code> SDK 直连成功，排除 Key 过期或端点错误</p>
+      <p style="margin-bottom:8px;">2. <strong>对比请求 Header</strong> — 发现 SDK 同时发送 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">x-api-key</code> 和 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">api-key</code> 两个 header，而 Hermes 只发 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">x-api-key</code>（Azure 需要 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">api-key</code>）</p>
+      <p style="margin-bottom:8px;">3. <strong>追踪 api_mode 解析</strong> — 发现 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">resolve_runtime_provider()</code> 返回 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">api_mode: chat_completions</code> 而非 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">anthropic_messages</code> — <strong>这才是 404 的真正原因</strong></p>
+      <p>4. <strong>定位根因</strong> — Hermes 用 OpenAI Chat Completions 格式（<code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em;">POST /v1/chat/completions</code>）去请求 Anthropic 端点，Azure 找不到这个路径，返回 404</p>
+    </div>
+
+    <h4 style="color:var(--accent-red);margin-bottom:10px;font-size:0.95em;">🎯 根因（两个 Bug 叠加）</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:16px;margin-bottom:20px;">
+      <div style="background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.2);border-radius:12px;padding:20px;">
+        <h5 style="color:var(--accent-red);margin-bottom:8px;font-size:0.9em;">Bug 1：api_mode 解析缺陷（主因 → 404）</h5>
+        <p style="color:var(--text-dim);font-size:0.88em;line-height:1.7;">
+          <strong>文件：</strong><code style="font-size:0.9em;">hermes_cli/runtime_provider.py</code><br>
+          <strong>函数：</strong><code style="font-size:0.9em;">_detect_api_mode_for_url()</code><br><br>
+          该函数负责根据 URL 自动检测应该用哪种 API 协议。它能识别 <code style="font-size:0.9em;">api.openai.com</code>（→ codex_responses）和 <code style="font-size:0.9em;">api.x.ai</code>（→ codex_responses），
+          但<strong>不识别以 <code style="font-size:0.9em;">/anthropic</code> 结尾的 URL</strong>。<br><br>
+          结果：Azure Anthropic 端点被当作普通 OpenAI 端点，用 Chat Completions 格式发请求，Azure 返回 404。
+        </p>
+      </div>
+      <div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:12px;padding:20px;">
+        <h5 style="color:var(--accent-yellow);margin-bottom:8px;font-size:0.9em;">Bug 2：Auth Header 不兼容（次因 → 401）</h5>
+        <p style="color:var(--text-dim);font-size:0.88em;line-height:1.7;">
+          <strong>文件：</strong><code style="font-size:0.9em;">agent/anthropic_adapter.py</code><br>
+          <strong>函数：</strong><code style="font-size:0.9em;">build_anthropic_client()</code><br><br>
+          Hermes 用标准 <code style="font-size:0.9em;">anthropic.Anthropic</code> 客户端，发送 <code style="font-size:0.9em;">x-api-key</code> header。
+          但 Azure AI Foundry 需要 <code style="font-size:0.9em;">api-key</code> header（注意没有 <code style="font-size:0.9em;">x-</code> 前缀）。<br><br>
+          官方 <code style="font-size:0.9em;">AnthropicFoundry</code> SDK 会同时发两个 header，所以直接调用能成功。Hermes 只发一个，所以即使 api_mode 对了也会 401。
+        </p>
+      </div>
+    </div>
+
+    <h4 style="color:var(--accent-green);margin-bottom:10px;font-size:0.95em;">✅ 修复方案</h4>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:16px;margin-bottom:20px;">
+      <div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:12px;padding:20px;">
+        <h5 style="color:var(--accent-green);margin-bottom:8px;font-size:0.9em;">Patch 1：修复 api_mode 检测</h5>
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;font-family:'SF Mono','Fira Code',monospace;font-size:0.8em;color:#c9d1d9;overflow-x:auto;line-height:1.6;">
+          <span style="color:#8b949e;"># hermes_cli/runtime_provider.py</span><br>
+          <span style="color:#8b949e;"># _detect_api_mode_for_url() 加入：</span><br>
+          <span style="color:#ff7b72;">if</span> normalized.endswith(<span style="color:#a5d6ff;">"/anthropic"</span>):<br>
+          &nbsp;&nbsp;<span style="color:#ff7b72;">return</span> <span style="color:#a5d6ff;">"anthropic_messages"</span>
+        </div>
+      </div>
+      <div style="background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:12px;padding:20px;">
+        <h5 style="color:var(--accent-green);margin-bottom:8px;font-size:0.9em;">Patch 2：修复 Auth Header</h5>
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px;font-family:'SF Mono','Fira Code',monospace;font-size:0.8em;color:#c9d1d9;overflow-x:auto;line-height:1.6;">
+          <span style="color:#8b949e;"># agent/anthropic_adapter.py</span><br>
+          <span style="color:#8b949e;"># build_anthropic_client() 第三方端点分支：</span><br>
+          _extra = {<span style="color:#a5d6ff;">"api-key"</span>: api_key}<br>
+          <span style="color:#ff7b72;">if</span> common_betas:<br>
+          &nbsp;&nbsp;_extra[<span style="color:#a5d6ff;">"anthropic-beta"</span>] = ...<br>
+          kwargs[<span style="color:#a5d6ff;">"default_headers"</span>] = _extra
+        </div>
+      </div>
+    </div>
+
+    <div style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:8px;padding:16px;">
+      <p style="color:var(--accent-yellow);font-weight:600;margin-bottom:6px;font-size:0.9em;">⚠️ 注意</p>
+      <p style="color:var(--text-dim);font-size:0.88em;">
+        这两个 patch 直接修改了 Hermes 的源码文件。执行 <code style="background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.9em;">hermes update</code> 后会被覆盖，需要重新 patch。
+        如果 Hermes 上游修复了 Azure AI Foundry Anthropic 端点的支持，则不再需要这些 patch。
+      </p>
+    </div>
+  </div>
+
+  <!-- 故障 2：小克 SOUL 被覆盖 -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <span style="background:rgba(251,191,36,0.15);color:var(--accent-yellow);padding:4px 12px;border-radius:6px;font-size:0.82em;font-weight:600;">2026-04-19</span>
+      <h3 style="font-size:1.15em;">小克（OpenClaw）拒绝 CLI 派活 — SOUL.md 被覆盖</h3>
+    </div>
+    <p style="color:var(--text-dim);font-size:0.92em;line-height:1.8;margin-bottom:16px;">
+      <strong>症状：</strong>小何通过 CLI 派活给小克，小克拒绝执行，回复"无法验证消息来源"。<br>
+      <strong>根因：</strong>自动化脚本（gbrain soul-audit）把小克的 SOUL.md 覆盖成了小何的版本（Dale 使命 / side project 规则），
+      小克丢失了"执行助手"人设和"可信代理条款"，不再认可 CLI 派活是合法指令。<br>
+      <strong>修复：</strong>将小克的 SOUL.md 从共享符号链接改为独立实文件，写入专属的 Agent Hierarchy 和可信代理条款。<br>
+      <strong>教训：</strong><span style="color:var(--accent-red);font-weight:600;">SOUL.md 是人格文件，绝不共享。</span>每个 Agent 的 SOUL 必须独立维护，防止被其他 Agent 的自动化流程覆盖。
+    </p>
+  </div>
+</div>
+
+</div><!-- end container -->
+
+<div class="footer">
+  <p>Dale's AI Assistant Architecture · 最后更新：2026-04-20</p>
+  <p style="margin-top:4px;">MacBook Pro M4 Pro · Azure AI Foundry · Hermes + OpenClaw + Kiro CLI</p>
+</div>
+
+</body>
+</html>

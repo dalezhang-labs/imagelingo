@@ -94,31 +94,6 @@ class LovartService:
         })
         return result.get("project_id", "")
 
-    async def render_text_on_image(
-        self,
-        original_image_bytes: bytes,
-        text_regions: list[dict],
-    ) -> bytes:
-        _ = text_regions
-        project_id = self._get_or_create_project()
-        image_url = f"data:image/png;base64,{len(original_image_bytes)}"
-        thread_id = self._request("POST", f"{self.prefix}/chat", body={
-            "prompt": "Render translated text on the image while preserving layout.",
-            "project_id": project_id,
-            "attachments": [image_url],
-        })["thread_id"]
-        for _ in range(3):
-            await asyncio.sleep(0)
-            status = self._request("GET", f"{self.prefix}/chat/status", params={"thread_id": thread_id}).get("status")
-            if status == "done":
-                result = self._request("GET", f"{self.prefix}/chat/result", params={"thread_id": thread_id})
-                for item in result.get("items", []):
-                    for artifact in item.get("artifacts", []):
-                        if artifact.get("type") == "image" and artifact.get("content"):
-                            return artifact["content"].encode()
-                raise ValueError("Lovart done but no image artifact found")
-        raise TimeoutError("Lovart translation timed out")
-
     async def translate_image(self, image_url: str, target_language: str, source_hint: str = "auto") -> str:
         project_id = self._get_or_create_project()
         prompt = (

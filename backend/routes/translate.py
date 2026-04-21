@@ -35,6 +35,17 @@ class TranslateResponse(BaseModel):
     job_id: str
 
 
+class BatchTranslateRequest(BaseModel):
+    store_handle: str
+    product_id: str
+    image_urls: list[str]
+    target_languages: list[str]
+
+
+class BatchTranslateResponse(BaseModel):
+    job_ids: list[str]
+
+
 class TestTranslateRequest(BaseModel):
     image_url: str
     target_language: str = "English"
@@ -188,6 +199,25 @@ async def start_translation(req: TranslateRequest, background_tasks: BackgroundT
     job_id = _create_job(store_id, req.product_id, req.image_url, req.target_languages)
     background_tasks.add_task(_run_pipeline, job_id, store_id, req.image_url, req.target_languages)
     return TranslateResponse(job_id=job_id)
+
+
+@router.post("/batch", response_model=BatchTranslateResponse)
+async def start_batch_translation(req: BatchTranslateRequest, background_tasks: BackgroundTasks):
+    if not req.image_urls:
+        raise HTTPException(400, "image_urls must not be empty")
+    store_id, handle = _resolve_store(req.store_handle.strip())
+    token = get_token(handle)
+    if not token:
+        raise HTTPException(401, "Store not authenticated or token expired")
+    ok, used, limit = _check_quota(store_id)
+    if not ok:
+        raise HTTPException(402, f"Monthly quota exceeded ({used}/{limit}). Please upgrade your plan.")
+    job_ids: list[str] = []
+    for image_url in req.image_urls:
+        job_id = _create_job(store_id, req.product_id, image_url, req.target_languages)
+        background_tasks.add_task(_run_pipeline, job_id, store_id, image_url, req.target_languages)
+        job_ids.append(job_id)
+    return BatchTranslateResponse(job_ids=job_ids)
 
 
 @router.post("/test")

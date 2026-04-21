@@ -20,7 +20,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetch(apiUrl(`/api/translate/usage?store_handle=${storeHandle}`))
+    fetch(apiUrl(`/api/imagelingo/translate/usage?store_handle=${storeHandle}`))
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setUsage(d))
       .catch(() => {});

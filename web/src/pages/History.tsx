@@ -25,7 +25,7 @@ export default function History() {
 
   const fetchHistory = () => {
     setLoading(true);
-    fetch(apiUrl(`/api/translate/history?store_handle=${storeHandle}`))
+    fetch(apiUrl(`/api/imagelingo/translate/history?store_handle=${storeHandle}`))
       .then((r) => r.ok ? r.json() : [])
       .then((data) => setJobs(data))
       .catch(() => setJobs([]))
@@ -37,7 +37,7 @@ export default function History() {
   const handleRetry = async (jobId: string) => {
     setRetrying(jobId);
     try {
-      const res = await fetch(apiUrl(`/api/translate/jobs/${jobId}/retry`), { method: "POST" });
+      const res = await fetch(apiUrl(`/api/imagelingo/translate/jobs/${jobId}/retry`), { method: "POST" });
       if (res.ok) {
         // Refresh after a short delay to let the job restart
         setTimeout(fetchHistory, 1000);

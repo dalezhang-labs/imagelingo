@@ -17,15 +17,9 @@ const STATIC_PATH =
 
 const app = express();
 
-// Proxy /api/auth and /api/translate to Python FastAPI backend
+// Proxy /api/imagelingo/* to Python FastAPI backend
 // Must be BEFORE Shopline SDK auth routes
-app.use('/api/auth', createProxyMiddleware({
-  target: PYTHON_BACKEND,
-  changeOrigin: true,
-  pathRewrite: function(_path: string, req: any) { return req.originalUrl; },
-}));
-
-app.use('/api/translate', createProxyMiddleware({
+app.use('/api/imagelingo', createProxyMiddleware({
   target: PYTHON_BACKEND,
   changeOrigin: true,
   pathRewrite: function(_path: string, req: any) { return req.originalUrl; },

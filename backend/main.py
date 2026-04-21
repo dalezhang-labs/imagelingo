@@ -27,9 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router, prefix="/api/auth")
-app.include_router(translate.router, prefix="/api/translate")
-app.include_router(webhook.router, prefix="/api/webhooks")
+app.include_router(auth.router, prefix="/api/imagelingo/auth")
+app.include_router(translate.router, prefix="/api/imagelingo/translate")
+app.include_router(webhook.router, prefix="/api/imagelingo/webhooks")
 
 
 @app.on_event("startup")

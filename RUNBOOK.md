@@ -24,7 +24,6 @@ pip install -r backend/requirements.txt
 ### 3. Run Backend
 
 ```bash
-cd <project-root>
 uvicorn backend.main:app --reload --port 8000
 ```
 
@@ -44,7 +43,7 @@ python backend/tests/test_full_pipeline.py --image-url https://example.com/produ
 # With a public image URL
 curl -X POST http://localhost:8000/api/translate/test \
   -H "Content-Type: application/json" \
-  -d '{"image_url": "https://example.com/product.jpg", "target_language": "English"}'
+  -d '{"image_url": "https://example.com/chinese-product.jpg", "target_language": "English"}'
 
 # Upload a local file
 curl -X POST http://localhost:8000/api/translate/test/upload \
@@ -62,8 +61,8 @@ pytest backend/tests/test_smoke_pipeline.py -v
 | Endpoint | Auth | Description |
 |---|---|---|
 | `GET /health` | None | Health check |
-| `POST /api/translate/test` | None | Dev: image → Lovart → return URL (no DB) |
-| `POST /api/translate/test/upload` | None | Dev: upload file → Lovart → return URL |
+| `POST /api/translate/test` | None | Dev: OCR → Lovart → return URL (no DB) |
+| `POST /api/translate/test/upload` | None | Dev: upload file → OCR → Lovart → return URL |
 | `POST /api/translate/` | Store token | Production: create translation job |
 | `GET /api/translate/jobs/{id}` | None | Get job status + results |
 | `GET /api/translate/history` | None | List translation history |
@@ -71,8 +70,10 @@ pytest backend/tests/test_smoke_pipeline.py -v
 ### 6. Architecture
 
 ```
-Original image → Lovart API (auto-detect text + translate + re-render) → Translated image URL
+Image → EasyOCR (extract text, optional) → Lovart API (translate + re-render) → Translated image URL
 ```
 
-- No OCR step — Lovart handles text detection, translation, and rendering in one step
 - No Cloudinary — Lovart returns CDN URLs directly
+- OCR is optional — provides text context to Lovart for better accuracy
+- Lovart handles text detection, translation, and image rendering in one step
+- Lovart polling timeout: 10 minutes (image translation can take 1-7 minutes)

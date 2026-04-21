@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import Nav from "../components/Nav";
+import { apiUrl } from "../utils/api";
 
 const LANGUAGES = [
   { code: "EN-US", label: "English (US)" },
@@ -43,7 +44,7 @@ export default function Translate() {
 
   // Fetch usage on mount
   useEffect(() => {
-    fetch(`/api/translate/usage?store_handle=${storeHandle}`)
+    fetch(apiUrl(`/api/translate/usage?store_handle=${storeHandle}`))
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setUsage(d))
       .catch(() => {});
@@ -83,7 +84,7 @@ export default function Translate() {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       const results = await Promise.all(
-        jobIds.map((id) => fetch(`/api/translate/jobs/${id}`).then((r) => r.ok ? r.json() : null))
+        jobIds.map((id) => fetch(apiUrl(`/api/translate/jobs/${id}`)).then((r) => r.ok ? r.json() : null))
       );
       const updated = results.filter(Boolean) as JobResult[];
       setJobs(updated);
@@ -101,7 +102,7 @@ export default function Translate() {
     try {
       const isBatch = validUrls.length > 1;
       if (isBatch) {
-        const res = await fetch("/api/translate/batch", {
+        const res = await fetch(apiUrl("/api/translate/batch"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -121,7 +122,7 @@ export default function Translate() {
         setJobs(job_ids.map((id: string) => ({ job_id: id, status: "pending", original_image_url: "", results: {}, error: null })));
         pollJobs(job_ids);
       } else {
-        const res = await fetch("/api/translate/", {
+        const res = await fetch(apiUrl("/api/translate/"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

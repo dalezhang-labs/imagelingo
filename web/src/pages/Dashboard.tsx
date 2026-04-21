@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Nav from "../components/Nav";
+import { apiUrl } from "../utils/api";
 
 interface UsageData {
   used: number;
@@ -19,7 +20,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetch(`/api/translate/usage?store_handle=${storeHandle}`)
+    fetch(apiUrl(`/api/translate/usage?store_handle=${storeHandle}`))
       .then((r) => r.ok ? r.json() : null)
       .then((d) => d && setUsage(d))
       .catch(() => {});

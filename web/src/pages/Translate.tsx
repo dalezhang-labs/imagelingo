@@ -39,7 +39,16 @@ export default function Translate() {
 
   const storeHandle = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("handle") || params.get("shop") || "";
+    // Try query params first, then extract from Shopline admin URL
+    const fromParams = params.get("handle") || params.get("shop") || "";
+    if (fromParams) return fromParams;
+    // Fallback: extract from referrer or current host (e.g. testasad.myshopline.com)
+    try {
+      const host = window.location.hostname;
+      const match = host.match(/^([^.]+)\.myshopline\.com$/);
+      if (match) return match[1];
+    } catch {}
+    return "";
   }, []);
 
   // Fetch usage on mount
@@ -99,13 +108,19 @@ export default function Translate() {
   };
 
   const handleReauth = async () => {
-    if (!storeHandle) return;
+    if (!storeHandle) {
+      // No handle available, redirect to install endpoint directly
+      const installUrl = apiUrl("/api/imagelingo/auth/install?handle=");
+      try { window.top!.location.href = installUrl; } catch { window.location.href = installUrl; }
+      return;
+    }
     try {
       const res = await fetch(apiUrl(`/api/imagelingo/auth/reauth-url?handle=${encodeURIComponent(storeHandle)}`));
       if (res.ok) {
         const { auth_url } = await res.json();
         setReauthUrl(auth_url);
-        window.open(auth_url, "_top");
+        // Use top-level navigation to escape iframe
+        try { window.top!.location.href = auth_url; } catch { window.location.href = auth_url; }
       }
     } catch {}
   };

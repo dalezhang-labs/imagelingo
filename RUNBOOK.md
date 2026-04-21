@@ -1,81 +1,79 @@
 # ImageLingo Runbook
 
-## Required Environment Variables
+## Quick Start
 
-Copy `backend/.env.example` to `backend/.env` and fill in all values:
-
-| Key | Where to get it |
-|-----|----------------|
-| `SHOPLINE_APP_KEY` | Shopline Partner Dashboard → App → Credentials |
-| `SHOPLINE_APP_SECRET` | Same as above |
-| `SHOPLINE_APP_URL` | Your deployed backend URL (e.g. `https://your-app.railway.app`) |
-| `SHOPLINE_REDIRECT_URI` | `{SHOPLINE_APP_URL}/api/auth/callback` |
-| `LOVART_ACCESS_KEY` | https://lovart.ai → AK/SK Management |
-| `LOVART_SECRET_KEY` | Same as above |
-| `CLOUDINARY_CLOUD_NAME` | https://cloudinary.com → Dashboard |
-| `CLOUDINARY_API_KEY` | Same as above |
-| `CLOUDINARY_API_SECRET` | Same as above |
-| `DATABASE_URL` | Neon console → Connection string (postgres://...) |
-
-## Local Backend Setup
+### 1. Environment Setup
 
 ```bash
 cd backend
-pip install -r requirements.txt
-
-# Copy and fill env
 cp .env.example .env
-# edit .env with your keys
+# Fill in: LOVART_ACCESS_KEY, LOVART_SECRET_KEY, DATABASE_URL
+```
 
-# Initialize DB schema (requires DATABASE_URL)
-python -m backend.db.models
+Required env vars:
+- `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` — from Lovart partner portal
+- `DATABASE_URL` — Neon PostgreSQL connection string
+- `SHOPLINE_APP_KEY` / `SHOPLINE_APP_SECRET` — for production (not needed for /test endpoints)
 
-# Start server
+### 2. Install Dependencies
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+### 3. Run Backend
+
+```bash
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Health check: `curl http://localhost:8000/health`
+### 4. Test the Full Pipeline
 
-## Shopline Install → Translate Flow (shortest path)
-
-1. **Install app** — Shopline admin visits:
-   ```
-   https://{store}.myshopline.com/admin/apps/install?appKey={SHOPLINE_APP_KEY}
-   ```
-   This triggers `GET /api/auth/install` → OAuth redirect → `GET /api/auth/callback` → token saved.
-
-2. **Start translation job**:
-   ```bash
-   curl -X POST http://localhost:8000/api/translate/ \
-     -H "Content-Type: application/json" \
-     -d '{
-       "store_handle": "your-store",
-       "product_id": "123",
-       "image_url": "https://example.com/product.jpg",
-       "target_languages": ["EN-US", "DE", "JA"]
-     }'
-   # Returns: {"job_id": "..."}
-   ```
-
-3. **Poll job status**:
-   ```bash
-   curl http://localhost:8000/api/translate/jobs/{job_id}
-   # Returns: {"status": "done", "results": {"EN-US": "https://...", "DE": "https://..."}, "error": null}
-   ```
-   Statuses: `pending` → `processing` → `done` / `failed`
-
-## Run Smoke Tests (no real credentials needed)
-
+#### Option A: CLI test script (no server needed)
 ```bash
-cd <repo-root>
+# Uses the fixture image (backend/tests/fixtures/sample_chinese.jpg)
+python backend/tests/test_full_pipeline.py
+
+# With a custom image URL
+python backend/tests/test_full_pipeline.py --image-url https://example.com/product.jpg --target-language Japanese
+```
+
+#### Option B: API endpoint (server must be running)
+```bash
+# With a public image URL
+curl -X POST http://localhost:8000/api/translate/test \
+  -H "Content-Type: application/json" \
+  -d '{"image_url": "https://example.com/chinese-product.jpg", "target_language": "English"}'
+
+# Upload a local file
+curl -X POST http://localhost:8000/api/translate/test/upload \
+  -F "file=@backend/tests/fixtures/sample_chinese.jpg" \
+  -F "target_language=English"
+```
+
+#### Option C: Unit tests (no credentials needed)
+```bash
 pytest backend/tests/test_smoke_pipeline.py -v
 ```
 
-## Deploy to Railway
+### 5. API Endpoints
 
-```bash
-# From repo root
-railway up
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /health` | None | Health check |
+| `POST /api/translate/test` | None | Dev: OCR → Lovart → return URL (no DB) |
+| `POST /api/translate/test/upload` | None | Dev: upload file → OCR → Lovart → return URL |
+| `POST /api/translate/` | Store token | Production: create translation job |
+| `GET /api/translate/jobs/{id}` | None | Get job status + results |
+| `GET /api/translate/history` | None | List translation history |
+
+### 6. Architecture
+
+```
+Image → EasyOCR (extract text, optional) → Lovart API (translate + re-render) → Translated image URL
 ```
 
-Set all env vars in Railway dashboard under Variables.
+- No Cloudinary — Lovart returns CDN URLs directly
+- OCR is optional — provides text context to Lovart for better accuracy
+- Lovart handles text detection, translation, and image rendering in one step
+- Lovart polling timeout: 10 minutes (image translation can take 1-7 minutes)

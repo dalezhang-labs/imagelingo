@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Nav from "../components/Nav";
 
 interface Job {
@@ -7,17 +7,54 @@ interface Job {
   target_languages: string[];
   status: string;
   created_at: string;
-  results?: Record<string, string>;
+  error: string | null;
+  results: Record<string, string>;
 }
 
 export default function History() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selected, setSelected] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoading(false);
+  const storeHandle = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("handle") || params.get("shop") || "";
   }, []);
+
+  const fetchHistory = () => {
+    setLoading(true);
+    fetch(`/api/translate/history?store_handle=${storeHandle}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((data) => setJobs(data))
+      .catch(() => setJobs([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchHistory(); }, [storeHandle]);
+
+  const handleRetry = async (jobId: string) => {
+    setRetrying(jobId);
+    try {
+      const res = await fetch(`/api/translate/jobs/${jobId}/retry`, { method: "POST" });
+      if (res.ok) {
+        // Refresh after a short delay to let the job restart
+        setTimeout(fetchHistory, 1000);
+      }
+    } catch { /* ignore */ }
+    setRetrying(null);
+  };
+
+  const downloadImage = async (url: string, lang: string) => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `imagelingo-${lang.toLowerCase()}.png`;
+    link.click();
+    URL.revokeObjectURL(objectUrl);
+  };
 
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
@@ -33,8 +70,13 @@ export default function History() {
     <div className="min-h-screen bg-gray-50">
       <Nav />
       <main className="max-w-4xl mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Translation History</h1>
-        <p className="text-gray-500 mb-8">All your past translation jobs</p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-1">Translation History</h1>
+            <p className="text-gray-500 text-sm">All your past translation jobs</p>
+          </div>
+          <button onClick={fetchHistory} className="text-sm text-indigo-600 font-medium hover:underline">Refresh</button>
+        </div>
 
         {loading ? (
           <p className="text-gray-400 text-sm">Loading…</p>
@@ -52,17 +94,32 @@ export default function History() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Languages</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
-                  <th className="px-4 py-3" />
+                  <th className="px-4 py-3 font-medium text-gray-600 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {jobs.map((job) => (
                   <tr key={job.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><img src={job.original_image_url} alt="original" className="w-12 h-12 object-cover rounded border border-gray-100" /></td>
-                    <td className="px-4 py-3 text-gray-700">{job.target_languages.join(", ")}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(job.status)}`}>{job.status}</span></td>
-                    <td className="px-4 py-3 text-gray-400">{new Date(job.created_at).toLocaleDateString()}</td>
-                    <td className="px-4 py-3"><button onClick={() => setSelected(job)} className="text-indigo-600 hover:underline text-xs font-medium">View</button></td>
+                    <td className="px-4 py-3">
+                      <img src={job.original_image_url} alt="original" className="w-12 h-12 object-cover rounded border border-gray-100" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{job.target_languages?.join(", ") || "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(job.status)}`}>{job.status}</span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400">{job.created_at ? new Date(job.created_at).toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                    <td className="px-4 py-3 text-right space-x-2">
+                      <button onClick={() => setSelected(job)} className="text-indigo-600 hover:underline text-xs font-medium">View</button>
+                      {job.status === "failed" && (
+                        <button
+                          onClick={() => handleRetry(job.id)}
+                          disabled={retrying === job.id}
+                          className="text-amber-600 hover:underline text-xs font-medium disabled:opacity-50"
+                        >
+                          {retrying === job.id ? "Retrying…" : "Retry"}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -70,26 +127,45 @@ export default function History() {
           </div>
         )}
 
+        {/* Detail modal */}
         {selected && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setSelected(null)}>
-            <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-gray-900">Job Details</h2>
-                <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+                <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600 text-lg" aria-label="Close">✕</button>
               </div>
               <img src={selected.original_image_url} alt="original" className="w-full max-h-48 object-contain rounded border border-gray-100 mb-4" />
-              <p className="text-xs text-gray-400 mb-3 font-mono">{selected.id}</p>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${statusBadge(selected.status)}`}>{selected.status}</span>
+                <span className="text-xs text-gray-400 font-mono">{selected.id}</span>
+              </div>
+              {selected.error && <p className="text-sm text-red-600 mb-3">{selected.error}</p>}
               {selected.results && Object.keys(selected.results).length > 0 ? (
                 <div className="grid grid-cols-2 gap-3">
                   {Object.entries(selected.results).map(([lang, url]) => (
                     <div key={lang} className="border border-gray-100 rounded-lg overflow-hidden">
                       <img src={url} alt={lang} className="w-full object-cover" />
-                      <div className="px-2 py-1.5 text-xs font-medium text-gray-600 bg-gray-50">{lang}</div>
+                      <div className="px-2 py-1.5 flex items-center justify-between bg-gray-50">
+                        <span className="text-xs font-medium text-gray-600">{lang}</span>
+                        <div className="flex gap-2">
+                          <button onClick={() => downloadImage(url, lang)} className="text-xs text-indigo-600 hover:underline">Download</button>
+                          <a href={url} target="_blank" rel="noreferrer" className="text-xs text-indigo-600 hover:underline">Open</a>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="text-sm text-gray-400">No results available.</p>
+              )}
+              {selected.status === "failed" && (
+                <button
+                  onClick={() => { handleRetry(selected.id); setSelected(null); }}
+                  className="mt-4 w-full bg-amber-500 text-white rounded-lg py-2 text-sm font-medium hover:bg-amber-600"
+                >
+                  Retry This Job
+                </button>
               )}
             </div>
           </div>

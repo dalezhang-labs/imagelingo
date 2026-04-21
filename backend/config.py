@@ -9,12 +9,8 @@ _REQUIRED: Dict[str, str] = {
     "SHOPLINE_APP_SECRET": "Shopline app secret",
     "SHOPLINE_APP_URL": "Shopline app URL",
     "SHOPLINE_REDIRECT_URI": "Shopline OAuth redirect URI",
-    "DEEPL_API_KEY": "DeepL API key",
     "LOVART_ACCESS_KEY": "Lovart access key (AK)",
     "LOVART_SECRET_KEY": "Lovart secret key (SK)",
-    "CLOUDINARY_CLOUD_NAME": "Cloudinary cloud name",
-    "CLOUDINARY_API_KEY": "Cloudinary API key",
-    "CLOUDINARY_API_SECRET": "Cloudinary API secret",
     "DATABASE_URL": "Neon/PostgreSQL connection string",
 }
 
@@ -29,10 +25,6 @@ def validate_env(keys: Optional[List[str]] = None) -> None:
 
 def validate_lovart() -> None:
     validate_env(["LOVART_ACCESS_KEY", "LOVART_SECRET_KEY"])
-
-
-def validate_cloudinary() -> None:
-    validate_env(["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"])
 
 
 def validate_database() -> None:

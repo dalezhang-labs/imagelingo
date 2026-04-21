@@ -361,6 +361,149 @@ async def reauth_url(handle: str = ""):
 
 ---
 
+## 16. Shopline 应用设置里的 URL 填错（应用地址 vs 回调地址）
+
+**现象**：在 Shopline Partners 后台配置应用时，不确定"应用地址"和"应用回调地址"分别填什么。填了 Cloudflare Tunnel 临时地址后，每次重启地址都变。
+
+**原因**：开发阶段用的 Cloudflare Tunnel 地址（如 `https://xxx.trycloudflare.com`）是临时的，不适合正式环境。正式环境需要用固定域名。
+
+**解决方案**：
+
+| 字段 | 填什么 | 示例 |
+|------|--------|------|
+| **应用地址** | Vercel 前端地址（用户打开 app 看到的页面） | `https://web-seven-beta-49.vercel.app` |
+| **应用回调地址** | Railway 后端的 OAuth callback 端点 | `https://positive-warmth-production.up.railway.app/api/imagelingo/auth/callback` |
+
+**关键区分**：
+- 应用地址 = 前端（Vercel），用户交互界面
+- 回调地址 = 后端（Railway），处理 OAuth token 交换
+- 同时需要更新 `backend/.env` 和 Railway 环境变量中的 `SHOPLINE_APP_URL` 和 `SHOPLINE_REDIRECT_URI`
+
+```bash
+# 更新 Railway 环境变量
+railway variables set \
+  SHOPLINE_APP_URL=https://positive-warmth-production.up.railway.app \
+  SHOPLINE_REDIRECT_URI=https://positive-warmth-production.up.railway.app/api/imagelingo/auth/callback
+```
+
+---
+
+## 17. GDPR Webhook 端点缺失
+
+**现象**：Shopline 应用审核要求填写 GDPR 相关的 Webhook 端点（客户数据删除、商店数据删除），但后端没有实现。
+
+**解决方案**：在 `backend/routes/webhook.py` 中新增两个端点：
+
+```python
+@router.post("/gdpr/customers-data-erasure")
+async def customers_data_erasure(request: Request):
+    """ImageLingo 不存储客户 PII，直接返回 OK"""
+    return {"status": "ok", "message": "No customer data stored"}
+
+@router.post("/gdpr/shop-data-erasure")
+async def shop_data_erasure(request: Request):
+    """商家卸载时，删除该 store 的所有数据"""
+    # 级联删除：usage_logs → subscriptions → translated_images → translation_jobs → stores
+    ...
+```
+
+**Shopline 后台填写**：
+- 客户数据删除端点：`https://{railway_domain}/api/imagelingo/webhooks/gdpr/customers-data-erasure`
+- 商店数据删除端点：`https://{railway_domain}/api/imagelingo/webhooks/gdpr/shop-data-erasure`
+
+---
+
+## 18. Lovart API 返回 401 Invalid access key
+
+**现象**：翻译 job 失败，错误信息 `Lovart HTTP 401: {"code":1005,"error":"Invalid access key"}`。
+
+**原因**：可能的情况：
+1. 本地 `.env` 里的 key 已更新，但 Railway 环境变量还是旧的
+2. Lovart 后台重新生成了 AK/SK，旧 key 已失效
+3. Key 复制时多了空格或换行
+
+**排查步骤**：
+```bash
+# 1. 确认本地 .env 的 key
+python3 -c "from dotenv import load_dotenv; load_dotenv('backend/.env'); import os; print(os.environ['LOVART_ACCESS_KEY'][:12])"
+
+# 2. 直接测试 API 连通性
+python3 -c "
+import hmac, hashlib, time, json, urllib.request
+ak = 'ak_xxx'; sk = 'sk_xxx'
+method, path = 'POST', '/v1/openapi/project/save'
+ts = str(int(time.time()))
+sig = hmac.new(sk.encode(), f'{method}\n{path}\n{ts}'.encode(), hashlib.sha256).hexdigest()
+# ... 发请求测试
+"
+
+# 3. 同步更新 Railway 环境变量
+railway variables set LOVART_ACCESS_KEY=ak_xxx LOVART_SECRET_KEY=sk_xxx
+```
+
+**关键点**：本地 `.env` 和 Railway 环境变量必须同步更新。Railway 设置环境变量后会自动触发重新部署。
+
+---
+
+## 19. OCR 在 async 上下文中报 "This event loop is already running"
+
+**现象**：Railway 日志报 `OCR failed (continuing without): This event loop is already running`，同时有 `RuntimeWarning: coroutine 'OCRService.extract_text' was never awaited`。
+
+**原因**：`_run_ocr()` 是同步函数，内部用 `asyncio.get_event_loop().run_until_complete(ocr.extract_text(...))` 调用 async 方法。但它被 async 的 `_run_pipeline()` 调用，此时 event loop 已经在运行，不能嵌套 `run_until_complete()`。
+
+**解决方案**：新增 `_run_ocr_async()` 异步版本，在 pipeline 中用 `await` 调用：
+
+```python
+async def _run_ocr_async(image_url: str) -> list[str]:
+    try:
+        ocr = OCRService(lang_groups=[["ch_sim", "en"]])
+        # ... 下载图片 ...
+        results = await ocr.extract_text(image_bytes)  # 直接 await
+        return [r["text"] for r in results if r.get("confidence", 0) > 0.3]
+    except Exception as e:
+        logger.warning("OCR failed (continuing without): %s", e)
+        return []
+
+async def _run_pipeline(...):
+    ocr_texts = await _run_ocr_async(image_url)  # 用 async 版本
+```
+
+**注意**：OCR 失败是 non-fatal 的，不会阻断翻译流程。但修复后 OCR 能正常工作，可以给 Lovart 提供更准确的文字信息，提升翻译质量。
+
+---
+
+## 20. History 页面报 SQL 类型错误（uuid = text）
+
+**现象**：Railway 日志报 `psycopg2.errors.UndefinedFunction: operator does not exist: uuid = text`，History 页面加载失败。
+
+**原因**：`translated_images` 表的 `job_id` 列类型是 `UUID`，但查询时传入的是 `TEXT` 类型的数组，PostgreSQL 不会自动做类型转换。
+
+**解决方案**：在 SQL 查询中显式转换类型：
+
+```python
+# 错误写法
+cur.execute("SELECT ... WHERE job_id = ANY(ARRAY[%s, %s])", (id1, id2))
+
+# 正确写法 — 显式 cast
+cur.execute("SELECT ... WHERE job_id = ANY(%s::uuid[])", (job_ids,))
+```
+
+---
+
+## 部署 Checklist
+
+每次部署前确认：
+
+1. **环境变量同步**：本地 `.env` 和 Railway 环境变量一致（特别是 API key 更新后）
+2. **前后端都部署**：
+   - 后端：`railway up --detach`（或 push 到 main 触发自动部署）
+   - 前端：`cd web && vercel --prod`
+3. **Shopline 后台配置**：应用地址（Vercel）、回调地址（Railway）、GDPR webhook 地址（Railway）
+4. **数据库 schema**：新增表/列后在 Neon console 执行 SQL
+5. **Lovart API**：key 更新后同步到 Railway（`railway variables set ...`）
+
+---
+
 ## 开发环境快速启动
 
 ```bash

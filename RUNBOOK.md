@@ -1,108 +1,79 @@
 # ImageLingo Runbook
 
-## Required Environment Variables
+## Quick Start
 
-Copy `backend/.env.example` to `backend/.env` and fill in all values:
-
-| Key | Where to get it |
-|-----|----------------|
-| `SHOPLINE_APP_KEY` | Shopline Partner Dashboard → App → Credentials |
-| `SHOPLINE_APP_SECRET` | Same as above |
-| `SHOPLINE_APP_URL` | Your deployed backend URL (e.g. `https://your-app.railway.app`) |
-| `SHOPLINE_REDIRECT_URI` | `{SHOPLINE_APP_URL}/api/auth/callback` |
-| `LOVART_ACCESS_KEY` | https://lovart.ai → AK/SK Management |
-| `LOVART_SECRET_KEY` | Same as above |
-| `CLOUDINARY_CLOUD_NAME` | https://cloudinary.com → Dashboard |
-| `CLOUDINARY_API_KEY` | Same as above |
-| `CLOUDINARY_API_SECRET` | Same as above |
-| `DATABASE_URL` | Neon console → Connection string (postgres://...) |
-
-## Local Backend Setup
+### 1. Environment Setup
 
 ```bash
 cd backend
-pip install -r requirements.txt
-
-# Copy and fill env
 cp .env.example .env
-# edit .env with your keys
+# Fill in: LOVART_ACCESS_KEY, LOVART_SECRET_KEY, DATABASE_URL
+```
 
-# Initialize DB schema (requires DATABASE_URL)
-python -m backend.db.models
+Required env vars:
+- `LOVART_ACCESS_KEY` / `LOVART_SECRET_KEY` — from Lovart partner portal
+- `DATABASE_URL` — Neon PostgreSQL connection string
+- `SHOPLINE_APP_KEY` / `SHOPLINE_APP_SECRET` — for production (not needed for /test endpoints)
 
-# Start server
+### 2. Install Dependencies
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+### 3. Run Backend
+
+```bash
+cd <project-root>
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Health check: `curl http://localhost:8000/health`
+### 4. Test the Full Pipeline
 
-## Run Tests
-
+#### Option A: CLI test script (no server needed)
 ```bash
-# Smoke tests (no credentials needed, all mocked):
+# Uses the fixture image (backend/tests/fixtures/sample_chinese.jpg)
+python backend/tests/test_full_pipeline.py
+
+# With a custom image URL
+python backend/tests/test_full_pipeline.py --image-url https://example.com/product.jpg --target-language Japanese
+```
+
+#### Option B: API endpoint (server must be running)
+```bash
+# With a public image URL
+curl -X POST http://localhost:8000/api/translate/test \
+  -H "Content-Type: application/json" \
+  -d '{"image_url": "https://img.alicdn.com/imgextra/i4/2206686532834/O1CN01JqGSMo1TfN0XQmCIR_!!2206686532834.jpg", "target_language": "English"}'
+
+# Upload a local file
+curl -X POST http://localhost:8000/api/translate/test/upload \
+  -F "file=@backend/tests/fixtures/sample_chinese.jpg" \
+  -F "target_language=English"
+```
+
+#### Option C: Unit tests (no credentials needed)
+```bash
 pytest backend/tests/test_smoke_pipeline.py -v
-
-# E2E dry run (tests OCR + prompt templates + result parsing, no API calls):
-python backend/tests/test_e2e.py
-
-# E2E live (requires valid LOVART_ACCESS_KEY/SECRET_KEY):
-python backend/tests/test_e2e.py --live
-
-# E2E live with custom image:
-python backend/tests/test_e2e.py --live --image-url https://your-image-url.jpg
 ```
 
-## Shopline Install → Translate Flow (shortest path)
+### 5. API Endpoints
 
-1. **Install app** — Shopline admin visits:
-   ```
-   https://{store}.myshopline.com/admin/apps/install?appKey={SHOPLINE_APP_KEY}
-   ```
-   This triggers `GET /api/auth/install` → OAuth redirect → `GET /api/auth/callback` → token saved.
+| Endpoint | Auth | Description |
+|---|---|---|
+| `GET /health` | None | Health check |
+| `POST /api/translate/test` | None | Dev: OCR → Lovart → return URL (no DB) |
+| `POST /api/translate/test/upload` | None | Dev: upload file → OCR → Lovart → return URL |
+| `POST /api/translate/` | Store token | Production: create translation job |
+| `GET /api/translate/jobs/{id}` | None | Get job status + results |
+| `GET /api/translate/history` | None | List translation history |
 
-2. **Start translation job**:
-   ```bash
-   curl -X POST http://localhost:8000/api/translate/ \
-     -H "Content-Type: application/json" \
-     -d '{
-       "store_handle": "your-store",
-       "product_id": "123",
-       "image_url": "https://example.com/product.jpg",
-       "target_languages": ["EN-US", "DE", "JA"]
-     }'
-   # Returns: {"job_id": "..."}
-   ```
-
-3. **Poll job status**:
-   ```bash
-   curl http://localhost:8000/api/translate/jobs/{job_id}
-   # Returns: {"status": "done", "results": {"EN-US": "https://...", "DE": "https://..."}, "error": null}
-   ```
-   Statuses: `pending` → `processing` → `done` / `failed`
-
-## Deploy to Railway
-
-Railway uses a Dockerfile (CPU-only PyTorch + pre-downloaded EasyOCR models).
-
-**Memory requirement**: ~1GB RAM minimum (EasyOCR + PyTorch CPU). Railway free tier (512MB) is insufficient — use a paid plan.
-
-```bash
-# From repo root
-railway up
-```
-
-Set all env vars in Railway dashboard under Variables.
-
-## Architecture: Translation Pipeline
+### 6. Architecture
 
 ```
-Upload image URL
-    ↓
-OCR (EasyOCR: ch_sim+en, ja+en, ko+en)
-    ↓ extracted text regions
-Lovart API (prompt includes OCR context for accuracy)
-    ↓ translated image URL
-Cloudinary (persistent hosting)
-    ↓ final URL
-Save to DB (imagelingo.translated_images)
+Image → EasyOCR (extract text) → Lovart API (translate + re-render) → Translated image URL
 ```
+
+- No Cloudinary — Lovart returns CDN URLs directly
+- OCR is optional — pipeline works without it, but OCR context improves translation accuracy
+- Lovart handles both translation and image rendering in one step

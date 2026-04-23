@@ -8,8 +8,11 @@ const links = [
 ];
 
 export default function Nav() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const storeHandle = useStoreHandle();
+
+  // Preserve original query string (handle, appkey, lang) across navigation
+  const qs = window.location.search || search;
 
   return (
     <nav className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">
@@ -18,7 +21,7 @@ export default function Nav() {
         {links.map((l) => (
           <Link
             key={l.to}
-            to={l.to}
+            to={`${l.to}${qs}`}
             className={`text-sm font-medium ${
               pathname.startsWith(l.to)
                 ? "text-indigo-600"

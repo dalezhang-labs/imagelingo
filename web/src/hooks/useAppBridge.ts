@@ -2,17 +2,21 @@ import Client, { shared } from "@shoplinedev/appbridge";
 
 const search = new URLSearchParams(location.search);
 
-// AppBridge only works when embedded inside Shopline admin (host param present).
+// AppBridge only works when embedded inside Shopline admin.
 // Skip initialization when accessed directly (e.g. /privacy, /faq, or standalone browser).
-const host = shared.getHost();
-const isEmbedded = !!host;
+let app: ReturnType<typeof Client.createApp> | null = null;
 
-const app = isEmbedded
-  ? Client.createApp({
+try {
+  const host = shared.getHost();
+  if (host) {
+    app = Client.createApp({
       appKey: search.get("appkey") || import.meta.env.VITE_APP_KEY,
       host,
-    })
-  : null;
+    });
+  }
+} catch {
+  // Not embedded in Shopline — app stays null, pages render without AppBridge
+}
 
 export const useAppBridge = () => {
   return app;

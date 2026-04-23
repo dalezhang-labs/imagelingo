@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Nav from "../components/Nav";
 
@@ -18,11 +18,9 @@ const TARGET_LANGS = ["English", "German", "Japanese", "Korean", "French"];
 
 export default function Index() {
   const navigate = useNavigate();
-  const [usage] = useState<UsageData>({ used: 0, limit: 5, plan: "free" });
+  const [usage] = useState<UsageData>({ used: 0, limit: 0, plan: "free" });
 
-  const pct = useMemo(() => Math.min(100, Math.round((usage.used / usage.limit) * 100)), [usage]);
-  const remaining = usage.limit - usage.used;
-  const isNearLimit = remaining <= 1;
+  const remaining = usage.limit > 0 ? usage.limit - usage.used : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -70,13 +68,10 @@ export default function Index() {
             </div>
             <div className="flex items-end gap-2 mb-3">
               <span className="text-3xl font-bold text-gray-900">{usage.used}</span>
-              <span className="text-gray-400 mb-1">/ {usage.limit} images</span>
+              <span className="text-gray-400 mb-1">/ 100 credits</span>
             </div>
-            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-              <div className="bg-indigo-500 h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
-            </div>
-            <p className={`text-xs mt-2 ${isNearLimit ? "text-amber-600" : "text-gray-400"}`}>
-              {remaining} remaining this month
+            <p className="text-xs mt-2 text-gray-400">
+              Each image costs 20 credits
             </p>
 
             <div className="mt-6 rounded-xl border border-gray-200 p-4 bg-gray-50">
@@ -107,23 +102,14 @@ export default function Index() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-            <h2 className="font-semibold text-gray-900 mb-2">Plan options</h2>
-            <p className="text-sm text-gray-600 mb-4">Upgrade only when you need more throughput.</p>
-            <div className="space-y-3">
-              {[
-                { name: "Basic", price: "$9/mo", limit: "200 images" },
-                { name: "Pro", price: "$29/mo", limit: "1,000 images" },
-                { name: "Business", price: "$59/mo", limit: "Unlimited" },
-              ].map((plan) => (
-                <div key={plan.name} className="flex items-center justify-between rounded-xl border border-gray-200 px-4 py-3">
-                  <div>
-                    <div className="font-medium text-gray-900 text-sm">{plan.name}</div>
-                    <div className="text-xs text-gray-500">{plan.limit}</div>
-                  </div>
-                  <div className="text-sm font-semibold text-indigo-600">{plan.price}</div>
-                </div>
-              ))}
-            </div>
+            <h2 className="font-semibold text-gray-900 mb-2">Free to use</h2>
+            <p className="text-sm text-gray-600 mb-4">100 credits per month, each image costs 20 credits.</p>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="w-full inline-flex items-center justify-center rounded-xl border border-indigo-300 px-4 py-3 text-indigo-600 font-medium hover:bg-indigo-50 transition-colors"
+            >
+              View usage dashboard
+            </button>
           </div>
         </section>
       </main>

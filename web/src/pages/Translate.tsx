@@ -79,18 +79,45 @@ export default function Translate() {
 
   const addUrlSlot = () => setImageUrls((prev) => [...prev, ""]);
 
-  // Handle file drop / select → create object URLs (for preview) and upload placeholder
-  const handleFiles = useCallback((files: FileList) => {
-    const urls = Array.from(files)
-      .filter((f) => f.type.startsWith("image/"))
-      .map((f) => URL.createObjectURL(f));
-    if (urls.length) {
-      setImageUrls((prev) => {
-        const cleaned = prev.filter((u) => u.trim());
-        return [...cleaned, ...urls];
-      });
-    }
-  }, []);
+  // Handle file drop / select → upload to backend, get HTTPS URL
+  const handleFiles = useCallback(async (files: FileList) => {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (!imageFiles.length) return;
+
+    // Show local previews immediately while uploading
+    const localPreviews = imageFiles.map((f) => URL.createObjectURL(f));
+    setImageUrls((prev) => {
+      const cleaned = prev.filter((u) => u.trim() && !u.startsWith("blob:"));
+      return [...cleaned, ...localPreviews];
+    });
+
+    // Upload each file to backend, replace blob URL with HTTPS URL
+    const uploadedUrls = await Promise.all(
+      imageFiles.map(async (file, i) => {
+        try {
+          const form = new FormData();
+          form.append("file", file);
+          const res = await fetch(apiUrl("/api/imagelingo/translate/upload"), {
+            method: "POST",
+            body: form,
+          });
+          if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+          const { url } = await res.json();
+          URL.revokeObjectURL(localPreviews[i]);
+          return url as string;
+        } catch {
+          // Keep blob URL as fallback (will fail on translate, but user sees the image)
+          return localPreviews[i];
+        }
+      })
+    );
+
+    setImageUrls((prev) => {
+      // Replace blob URLs with uploaded HTTPS URLs
+      const withoutBlobs = prev.filter((u) => !u.startsWith("blob:"));
+      return [...withoutBlobs, ...uploadedUrls];
+    });
+  }, [storeHandle]);
 
   const pollJobs = (jobIds: string[]) => {
     if (pollRef.current) clearInterval(pollRef.current);

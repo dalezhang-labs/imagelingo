@@ -16,6 +16,15 @@ const shopline = shoplineApp({
     'apps/installed_uninstalled': {
       callbackUrl: '/api/webhooks',
     },
+    'customers/data_request': {
+      callbackUrl: '/api/webhooks',
+    },
+    'customers/redact': {
+      callbackUrl: '/api/webhooks',
+    },
+    'merchants/redact': {
+      callbackUrl: '/api/webhooks',
+    },
   },
   hooks: {
     afterAuth: async ({ session }) => {

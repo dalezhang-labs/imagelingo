@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../daletoolmatrix"
+		},
+		{
+			"path": "../sp-dashboard"
+		}
+	],
+	"settings": {
+	}
+}

@@ -187,22 +187,11 @@ export default function Translate() {
     pending: "text-yellow-600", processing: "text-blue-600", done: "text-green-600", failed: "text-red-600",
   };
 
-  const quotaNearLimit = usage && usage.limit > 0 && usage.used >= usage.limit * 0.8;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
       <Nav />
       <main className="max-w-5xl mx-auto px-6 py-10">
-        {/* Usage warning banner */}
-        {quotaNearLimit && (
-          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            ⚠️ You've used <strong>{usage!.used}</strong> of <strong>{usage!.limit}</strong> images this month ({usage!.plan} plan).
-            {usage!.used >= usage!.limit
-              ? <> Quota exceeded — <a href="/dashboard" className="font-semibold underline">upgrade your plan</a>.</>
-              : <> Running low — consider <a href="/dashboard" className="font-semibold underline">upgrading</a>.</>}
-          </div>
-        )}
-
         {/* Auth expired banner */}
         {authExpired && (
           <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-4 text-sm text-red-800">

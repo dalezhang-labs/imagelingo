@@ -16,11 +16,17 @@ export const webhooksController: () => RequestHandler = () => async (_req, res) 
       case 'products/create':
         console.log('products/create');
         break;
+      case 'customers/data_request':
+        // GDPR: acknowledge customer data request; no personal data stored by this app
+        console.log('customers/data_request', payload);
+        break;
       case 'customers/redact':
-        console.log('customers/redact');
+        // GDPR: delete any stored customer data associated with payload.customer.id
+        console.log('customers/redact', payload);
         break;
       case 'merchants/redact':
-        console.log('merchants/redact');
+        // GDPR: delete all stored merchant data associated with payload.shop_id
+        console.log('merchants/redact', payload);
         break;
       default:
         throw new Response('Unhandled webhook topic', { status: 404 });

@@ -12,7 +12,7 @@ interface UsageData {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [usage, setUsage] = useState<UsageData>({ used: 0, limit: 5, plan: "free", month: "" });
+  const [usage, setUsage] = useState<UsageData>({ used: 0, limit: 0, plan: "free", month: "" });
 
   const storeHandle = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -27,7 +27,6 @@ export default function Dashboard() {
   }, [storeHandle]);
 
   const pct = usage.limit > 0 ? Math.min(100, Math.round((usage.used / usage.limit) * 100)) : 0;
-  const isOverLimit = usage.limit > 0 && usage.used >= usage.limit;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -35,12 +34,6 @@ export default function Dashboard() {
       <main className="max-w-3xl mx-auto px-6 py-10">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Dashboard</h1>
         <p className="text-gray-500 mb-8">Overview of your ImageLingo usage</p>
-
-        {isOverLimit && (
-          <div className="mb-6 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
-            🚫 You've reached your monthly limit. <a href="#plans" className="font-semibold underline">Upgrade your plan</a> to continue translating.
-          </div>
-        )}
 
         <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
           <div className="flex items-center justify-between mb-3">
@@ -60,25 +53,6 @@ export default function Dashboard() {
             {usage.limit > 0 ? `${Math.max(0, usage.limit - usage.used)} remaining this month` : "Unlimited usage"}
             {usage.month && ` (${usage.month})`}
           </p>
-        </div>
-
-        <div id="plans" className="bg-white rounded-xl border border-gray-200 p-6 mb-6 shadow-sm">
-          <h2 className="font-semibold text-gray-900 mb-1">Upgrade your plan</h2>
-          <p className="text-sm text-gray-500 mb-4">Get more translations and unlock advanced features.</p>
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            {[
-              { name: "Basic", price: "$9/mo", limit: "200 images" },
-              { name: "Pro", price: "$29/mo", limit: "1,000 images" },
-              { name: "Business", price: "$59/mo", limit: "Unlimited" },
-            ].map((plan) => (
-              <div key={plan.name} className={`border rounded-lg p-3 text-center cursor-pointer transition-colors ${usage.plan === plan.name.toLowerCase() ? "border-indigo-500 bg-indigo-50" : "border-gray-200 hover:border-indigo-400"}`}>
-                <div className="font-semibold text-gray-900 text-sm">{plan.name}</div>
-                <div className="text-indigo-600 font-bold text-sm mt-0.5">{plan.price}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{plan.limit}</div>
-              </div>
-            ))}
-          </div>
-          <button className="w-full bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-indigo-700 transition-colors" onClick={() => alert("Payment integration coming soon")}>Upgrade Plan</button>
         </div>
 
         <button onClick={() => navigate("/translate")} className="w-full bg-white border border-indigo-300 text-indigo-600 rounded-xl py-4 font-medium hover:bg-indigo-50 transition-colors shadow-sm">＋ Start New Translation</button>

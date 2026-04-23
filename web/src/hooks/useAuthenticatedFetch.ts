@@ -1,26 +1,29 @@
 import { useAppBridge } from "./useAppBridge";
-import { shared, Redirect } from '@shoplinedev/appbridge'
+import { shared, Redirect } from "@shoplinedev/appbridge";
+
 const search = new URLSearchParams(location.search);
 
 export function useAuthenticatedFetch() {
   const app = useAppBridge();
-  const isEmbedded = !!search.get("lang") 
-  
-  return async (uri: string, options?: Record<string, any> ) => {
-    let token
-    if (isEmbedded) {
+  const isEmbedded = !!search.get("lang");
+
+  return async (uri: string, options?: Record<string, any>) => {
+    let token: string | undefined;
+    if (isEmbedded && app) {
       token = await shared.getSessionToken(app);
     }
-    const { headers, ...restOptions } = options || {}
+    const { headers, ...restOptions } = options || {};
     const response = await fetch(uri, {
       headers: {
         ...headers,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Authorization':  token ? `Bearer ${token}` : undefined,
+        "X-Requested-With": "XMLHttpRequest",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      ...restOptions
+      ...restOptions,
     });
-    checkHeadersForReauthorization(response.headers, app);
+    if (app) {
+      checkHeadersForReauthorization(response.headers, app);
+    }
     return response;
   };
 }
@@ -28,12 +31,12 @@ export function useAuthenticatedFetch() {
 const checkHeadersForReauthorization = (headers: Headers, app: any) => {
   if (headers.get("X-SHOPLINE-API-Request-Failure-Reauthorize") === "1") {
     const authUrlHeader =
-      headers.get("X-SHOPLINE-API-Request-Failure-Reauthorize-Url") ||
-      `/api/auth`;
-
+      headers.get("X-SHOPLINE-API-Request-Failure-Reauthorize-Url") || `/api/auth`;
     const redirect = Redirect.create(app);
-    redirect.replaceTo(authUrlHeader.startsWith("/")
-    ? `https://${window.location.host}${authUrlHeader}`
-    : authUrlHeader)
+    redirect.replaceTo(
+      authUrlHeader.startsWith("/")
+        ? `https://${window.location.host}${authUrlHeader}`
+        : authUrlHeader
+    );
   }
-}
+};

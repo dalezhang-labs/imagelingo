@@ -18,7 +18,7 @@ export default function StoreGuard({ children }: { children: React.ReactNode }) 
             Please install the app from the Shopline App Store and open it from your store dashboard.
           </p>
           <a
-            href="https://appstore.shopline.com"
+            href="https://apps.shopline.com/?lang=en"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3 text-white font-medium hover:bg-indigo-700 transition-colors text-sm"

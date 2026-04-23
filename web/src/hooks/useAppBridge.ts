@@ -1,23 +1,33 @@
-import Client, { shared } from "@shoplinedev/appbridge";
+// Lazy AppBridge initialization.
+// @shoplinedev/appbridge has side effects that crash outside Shopline admin.
+// We never import it at the module top level.
 
-const search = new URLSearchParams(location.search);
+let _app: any = null;
+let _initPromise: Promise<any> | null = null;
 
-// AppBridge only works when embedded inside Shopline admin.
-// Skip initialization when accessed directly (e.g. /privacy, /faq, or standalone browser).
-let app: ReturnType<typeof Client.createApp> | null = null;
+async function loadAppBridge(): Promise<any> {
+  const search = new URLSearchParams(location.search);
+  const isEmbedded = !!search.get("appkey") || !!search.get("lang");
+  if (!isEmbedded) return null;
 
-try {
-  const host = shared.getHost();
-  if (host) {
-    app = Client.createApp({
-      appKey: search.get("appkey") || import.meta.env.VITE_APP_KEY,
-      host,
-    });
+  try {
+    const { default: Client, shared } = await import("@shoplinedev/appbridge");
+    const host = shared.getHost();
+    if (host) {
+      _app = Client.createApp({
+        appKey: search.get("appkey") || import.meta.env.VITE_APP_KEY,
+        host,
+      });
+    }
+  } catch {
+    // Not embedded or AppBridge unavailable
   }
-} catch {
-  // Not embedded in Shopline — app stays null, pages render without AppBridge
+  return _app;
 }
 
-export const useAppBridge = () => {
-  return app;
-};
+export function getAppBridgePromise() {
+  if (!_initPromise) _initPromise = loadAppBridge();
+  return _initPromise;
+}
+
+export const useAppBridge = () => _app;

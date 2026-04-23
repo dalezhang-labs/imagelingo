@@ -10,7 +10,7 @@ interface UsageData {
   credits_limit: number;
   credits_per_image: number;
   plan: string;
-  month: string;
+  period: string;
 }
 
 const DEFAULT_USAGE: UsageData = {
@@ -18,7 +18,7 @@ const DEFAULT_USAGE: UsageData = {
   credits_limit: 100,
   credits_per_image: 20,
   plan: "free",
-  month: "",
+  period: "",
 };
 
 export default function Dashboard() {
@@ -76,7 +76,7 @@ export default function Dashboard() {
           )}
           <p className="text-xs text-gray-400 mt-2">
             {remaining} credits remaining (~{imagesRemaining} images)
-            {usage.month && ` · ${usage.month}`}
+            {usage.period && ` · ${usage.period}`}
           </p>
           <p className="text-xs text-gray-300 mt-1">
             Each image translation costs {usage.credits_per_image} credits

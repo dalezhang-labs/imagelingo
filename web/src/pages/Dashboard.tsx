@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Nav from "../components/Nav";
+import StoreGuard from "../components/StoreGuard";
+import { useStoreHandle } from "../hooks/useStoreHandle";
 import { apiUrl } from "../utils/api";
 
 interface UsageData {
@@ -22,11 +24,7 @@ const DEFAULT_USAGE: UsageData = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const [usage, setUsage] = useState<UsageData>(DEFAULT_USAGE);
-
-  const storeHandle = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("handle") || params.get("shop") || "";
-  }, []);
+  const storeHandle = useStoreHandle();
 
   useEffect(() => {
     fetch(apiUrl(`/api/imagelingo/translate/usage?store_handle=${storeHandle}`))
@@ -44,6 +42,7 @@ export default function Dashboard() {
   const isLow = pct >= 80;
 
   return (
+    <StoreGuard>
     <div className="min-h-screen bg-gray-50">
       <Nav />
       <main className="max-w-3xl mx-auto px-6 py-10">
@@ -92,5 +91,6 @@ export default function Dashboard() {
         </button>
       </main>
     </div>
+    </StoreGuard>
   );
 }

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { useMemo } from "react";
+import { useStoreHandle } from "../hooks/useStoreHandle";
 
 const links = [
   { to: "/dashboard", label: "Dashboard" },
@@ -9,11 +9,7 @@ const links = [
 
 export default function Nav() {
   const { pathname } = useLocation();
-
-  const storeHandle = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("handle") || params.get("shop") || "";
-  }, []);
+  const storeHandle = useStoreHandle();
 
   return (
     <nav className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white">

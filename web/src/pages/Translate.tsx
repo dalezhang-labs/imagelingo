@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import Nav from "../components/Nav";
+import StoreGuard from "../components/StoreGuard";
+import { useStoreHandle } from "../hooks/useStoreHandle";
 import { apiUrl } from "../utils/api";
 
 const LANGUAGES = [
@@ -36,20 +38,7 @@ export default function Translate() {
   const [dragOver, setDragOver] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const storeHandle = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    // Try query params first, then extract from Shopline admin URL
-    const fromParams = params.get("handle") || params.get("shop") || "";
-    if (fromParams) return fromParams;
-    // Fallback: extract from referrer or current host (e.g. testasad.myshopline.com)
-    try {
-      const host = window.location.hostname;
-      const match = host.match(/^([^.]+)\.myshopline\.com$/);
-      if (match) return match[1];
-    } catch {}
-    return "";
-  }, []);
+  const storeHandle = useStoreHandle();
 
   // Fetch usage on mount
   useEffect(() => {
@@ -216,6 +205,7 @@ export default function Translate() {
 
 
   return (
+    <StoreGuard>
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
       <Nav />
       <main className="max-w-5xl mx-auto px-6 py-10">
@@ -355,5 +345,6 @@ export default function Translate() {
         )}
       </main>
     </div>
+    </StoreGuard>
   );
 }

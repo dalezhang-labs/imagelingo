@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Nav from "../components/Nav";
+import StoreGuard from "../components/StoreGuard";
+import { useStoreHandle } from "../hooks/useStoreHandle";
 import { apiUrl } from "../utils/api";
 
 interface Job {
@@ -17,11 +19,7 @@ export default function History() {
   const [selected, setSelected] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState<string | null>(null);
-
-  const storeHandle = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("handle") || params.get("shop") || "";
-  }, []);
+  const storeHandle = useStoreHandle();
 
   const fetchHistory = () => {
     setLoading(true);
@@ -68,6 +66,7 @@ export default function History() {
   };
 
   return (
+    <StoreGuard>
     <div className="min-h-screen bg-gray-50">
       <Nav />
       <main className="max-w-4xl mx-auto px-6 py-10">
@@ -173,5 +172,6 @@ export default function History() {
         )}
       </main>
     </div>
+    </StoreGuard>
   );
 }

@@ -4,6 +4,7 @@ import Nav from "../components/Nav";
 import StoreGuard from "../components/StoreGuard";
 import { useStoreHandle } from "../hooks/useStoreHandle";
 import { apiUrl } from "../utils/api";
+import { withCurrentSearch } from "../utils/navigation";
 
 interface UsageData {
   credits_used: number;
@@ -25,6 +26,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [usage, setUsage] = useState<UsageData>(DEFAULT_USAGE);
   const storeHandle = useStoreHandle();
+  const translatePath = withCurrentSearch("/translate");
 
   useEffect(() => {
     fetch(apiUrl(`/api/imagelingo/translate/usage?store_handle=${storeHandle}`))
@@ -84,7 +86,7 @@ export default function Dashboard() {
         </div>
 
         <button
-          onClick={() => navigate("/translate")}
+          onClick={() => navigate(translatePath)}
           className="w-full bg-white border border-indigo-300 text-indigo-600 rounded-xl py-4 font-medium hover:bg-indigo-50 transition-colors shadow-sm"
         >
           ＋ Start New Translation

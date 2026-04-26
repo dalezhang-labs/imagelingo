@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Nav from "../components/Nav";
+import { withCurrentSearch } from "../utils/navigation";
 
 interface UsageData {
   used: number;
@@ -19,6 +20,9 @@ const TARGET_LANGS = ["English", "German", "Japanese", "Korean", "French"];
 export default function Index() {
   const navigate = useNavigate();
   const [usage] = useState<UsageData>({ used: 0, limit: 0, plan: "free" });
+  const historyPath = withCurrentSearch("/history");
+  const translatePath = withCurrentSearch("/translate");
+  const dashboardPath = withCurrentSearch("/dashboard");
 
   const remaining = usage.limit > 0 ? usage.limit - usage.used : null;
 
@@ -38,13 +42,13 @@ export default function Index() {
 
             <div className="flex flex-wrap gap-3 mb-6">
               <button
-                onClick={() => navigate("/translate")}
+                onClick={() => navigate(translatePath)}
                 className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-3 text-white font-medium hover:bg-indigo-700 transition-colors shadow-sm"
               >
                 Start translation
               </button>
               <Link
-                to="/history"
+                to={historyPath}
                 className="inline-flex items-center justify-center rounded-xl border border-gray-300 px-5 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
               >
                 View history
@@ -94,7 +98,7 @@ export default function Index() {
               Use the translate flow to preview a source image, choose languages, and track progress without losing context.
             </p>
             <button
-              onClick={() => navigate("/translate")}
+              onClick={() => navigate(translatePath)}
               className="w-full inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-3 text-white font-medium hover:bg-indigo-700 transition-colors"
             >
               Open translate flow
@@ -105,7 +109,7 @@ export default function Index() {
             <h2 className="font-semibold text-gray-900 mb-2">Free to use</h2>
             <p className="text-sm text-gray-600 mb-4">100 credits per month, each image costs 20 credits.</p>
             <button
-              onClick={() => navigate("/dashboard")}
+              onClick={() => navigate(dashboardPath)}
               className="w-full inline-flex items-center justify-center rounded-xl border border-indigo-300 px-4 py-3 text-indigo-600 font-medium hover:bg-indigo-50 transition-colors"
             >
               View usage dashboard

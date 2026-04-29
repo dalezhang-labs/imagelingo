@@ -1,29 +1,34 @@
+import { type ReactNode } from "react";
 import { useStoreHandle } from "../hooks/useStoreHandle";
+import { apiUrl } from "../utils/api";
 
-export default function StoreGuard({ children }: { children: React.ReactNode }) {
+interface StoreGuardProps {
+  children: ReactNode;
+}
+
+/**
+ * Wraps pages that require a valid Shopline store context.
+ * If no store handle is found in the URL, shows a friendly message.
+ * The actual auth check (token validity) is handled by the backend returning 401.
+ */
+export default function StoreGuard({ children }: StoreGuardProps) {
   const storeHandle = useStoreHandle();
 
+  // If no handle at all, show install prompt
   if (!storeHandle) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-10 max-w-md text-center">
-          <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center mx-auto mb-5">
-            <svg className="w-7 h-7 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Store not connected</h2>
-          <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-            ImageLingo needs to be accessed from your Shopline admin panel.
-            Please install the app from the Shopline App Store and open it from your store dashboard.
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 p-8 shadow-sm text-center">
+          <div className="text-4xl mb-4">🔗</div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Open from Shopline Admin</h1>
+          <p className="text-gray-600 text-sm mb-6">
+            ImageLingo needs to be opened from your Shopline store admin panel to work correctly.
           </p>
           <a
-            href="https://apps.shopline.com/?lang=en"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3 text-white font-medium hover:bg-indigo-700 transition-colors text-sm"
+            href={apiUrl("/api/imagelingo/auth/install")}
+            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-3 text-white font-medium hover:bg-indigo-700 transition-colors"
           >
-            Go to Shopline App Store
+            Go to Install
           </a>
         </div>
       </div>

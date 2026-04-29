@@ -498,9 +498,84 @@ cur.execute("SELECT ... WHERE job_id = ANY(%s::uuid[])", (job_ids,))
 2. **前后端都部署**：
    - 后端：`railway up --detach`（或 push 到 main 触发自动部署）
    - 前端：`cd web && vercel --prod`
-3. **Shopline 后台配置**：应用地址（Vercel）、回调地址（Railway）、GDPR webhook 地址（Railway）
+3. **Shopline 后台配置**：应用地址（后端 /entry）、回调地址（后端 /callback）、GDPR webhook 地址（后端）
 4. **数据库 schema**：新增表/列后在 Neon console 执行 SQL
 5. **Lovart API**：key 更新后同步到 Railway（`railway variables set ...`）
+
+---
+
+## 21. Shopline 应用审核被拒 — 未按标准接入授权
+
+**现象**：提交应用审核后收到邮件："该应用尚未按照我们的标准要求接入 SHOPLINE 授权"。
+
+**原因**：三个问题：
+1. `SKIP_HMAC_VERIFY=true` 跳过了签名验证，Shopline 要求所有请求都必须验证 HMAC-SHA256 签名
+2. 没有实现 token refresh（文档第八步），token 过期后只能手动重新授权
+3. OAuth callback 收到 code 后没有验证签名
+
+**Shopline 授权文档**：https://developer.shopline.com/zh-hans-cn/docs/apps/api-instructions-for-use/app-authorization
+
+**解决方案**：
+
+1. **删除 `SKIP_HMAC_VERIFY` 跳过逻辑**，签名验证强制开启
+2. **`/install` 和 `/callback` 都验证签名**：
+```python
+def verify_hmac(params: dict) -> bool:
+    sign = params.get("sign", "")
+    filtered = {k: v for k, v in params.items() if k != "sign"}
+    expected = _make_sign(filtered)
+    return hmac.compare_digest(expected, sign)
+```
+3. **实现 token refresh（第八步）**：token 过期时自动调用 `POST /admin/oauth/token/refresh`，签名方式与 token create 相同（`HMAC-SHA256(body_string + timestamp, app_secret)`）
+4. **`redirectUri` 做 URL encode**（文档要求）
+
+---
+
+## 22. Shopline 应用地址应该填什么
+
+**现象**：不确定 Shopline Partners 后台的"应用地址"和"应用回调地址"分别填前端还是后端。
+
+**结论**：
+
+| 字段 | 填写 | 说明 |
+|------|------|------|
+| **应用地址** | `https://{railway_domain}/api/imagelingo/auth/entry` | 后端 entry 端点，验证签名后重定向到前端 |
+| **应用回调地址** | `https://{railway_domain}/api/imagelingo/auth/callback` | 后端 callback 端点，处理 OAuth code 换 token |
+| **客户数据删除端点** | `https://{railway_domain}/api/imagelingo/webhooks/gdpr/customers-data-erasure` | GDPR |
+| **商店数据删除端点** | `https://{railway_domain}/api/imagelingo/webhooks/gdpr/shop-data-erasure` | GDPR |
+
+**为什么应用地址不能填 Vercel 前端**：Shopline 每次打开 app 都会带签名参数（`?appkey=...&sign=...`）访问应用地址，审核要求必须验证签名。前端不做签名验证，会被拒。
+
+**`/entry` 端点的逻辑**：
+1. 验证 HMAC-SHA256 签名
+2. 检查 store 是否已授权（DB 里有有效 token）
+3. 已授权 → 302 重定向到 Vercel 前端（`FRONTEND_URL?shop={handle}`）
+4. 未授权 → 返回 HTML 页面，用 `window.top.location.href` 跳转到 OAuth 授权页
+
+---
+
+## 23. OAuth 授权页在 Shopline iframe 里嵌套（双重/多重侧边栏）
+
+**现象**：首次安装 app 时，OAuth 授权页面出现在 Shopline 的 iframe 里，导致 Shopline admin 侧边栏被嵌套了多层。
+
+**原因**：Shopline 在 iframe 里加载应用地址，如果应用地址用 HTTP 302 重定向到 OAuth 授权页（`https://{handle}.myshopline.com/admin/oauth-web/#/oauth/authorize`），OAuth 页面也会在 iframe 里打开。OAuth 页面本身是完整的 Shopline admin 页面，所以出现了嵌套。
+
+**解决方案**：不用 302 重定向，改为返回一个小 HTML 页面，用 JavaScript 在顶层窗口跳转：
+
+```python
+from fastapi.responses import HTMLResponse
+
+# 在 /entry 端点中，未授权时：
+return HTMLResponse(
+    f'<!DOCTYPE html><html><head><title>Redirecting...</title></head>'
+    f'<body><script>window.top.location.href = "{auth_url}";</script>'
+    f'<p>Redirecting to authorization...</p></body></html>'
+)
+```
+
+**关键点**：`window.top.location.href` 让整个浏览器窗口（而不是 iframe）跳转到 OAuth 页面，避免嵌套。
+
+**注意**：OAuth 完成后的 callback 重定向到 `FRONTEND_URL?shop={handle}`（Vercel 前端），这个是在 iframe 外面发生的，Shopline 会自动重新加载 app iframe，此时 `/entry` 检测到已授权，直接跳到前端，不会嵌套。
 
 ---
 
